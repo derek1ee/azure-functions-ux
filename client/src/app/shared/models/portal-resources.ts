@@ -129,6 +129,7 @@
     public static config = 'config';
     public static cors = 'cors';
     public static create = 'create';
+    public static add = 'add';
     public static dashboard_yourTrialExpiered = 'dashboard_yourTrialExpiered';
     public static disabled = 'disabled';
     public static enabled = 'enabled';
@@ -1179,4 +1180,5 @@
     public static disconnectConfirm = 'disconnectConfirm';
     public static communityTemplatesTitle = 'communityTemplatesTitle';
     public static communityTemplatesDescription = 'communityTemplatesDescription';
+    public static cloneConfigLoadFailure = "cloneConfigLoadFailure"
 }

@@ -1,4 +1,4 @@
-import { LogCategories, SiteTabIds } from 'app/shared/models/constants';
+import { LogCategories, ScenarioIds, SiteTabIds } from 'app/shared/models/constants';
 import { LogService } from 'app/shared/services/log.service';
 import { Component, Injector, Input, OnDestroy, Output } from '@angular/core';
 import { Observable } from 'rxjs/Observable';
@@ -21,6 +21,8 @@ import { SiteService } from 'app/shared/services/site.service';
 import { SiteConfig } from 'app/shared/models/arm/site-config';
 import { DropDownElement } from 'app/shared/models/drop-down-element';
 import { CustomFormControl } from 'app/controls/click-to-edit/click-to-edit.component';
+import { SlotsInfoCache } from "app/site/deployment-slots/helpers/slotsInfoCache";
+import { ScenarioService } from 'app/shared/services/scenario/scenario.service';
 
 // TODO [andimarc]: disable all controls when an add operation is in progress
 
@@ -35,6 +37,7 @@ export class AddSlotComponent extends FeatureComponent<ResourceId> implements On
     }
 
     @Output() close: Subject<boolean>;
+
 
     public dirtyMessage: string;
 
@@ -53,6 +56,9 @@ export class AddSlotComponent extends FeatureComponent<ResourceId> implements On
     private _siteId: string;
     private _slotsArm: ArmObj<Site>[];
 
+    private _slotsInfoCache: SlotsInfoCache;
+    private _configSrcSubject: Subject<string>;
+
     constructor(
         private _fb: FormBuilder,
         private _siteService: SiteService,
@@ -62,6 +68,7 @@ export class AddSlotComponent extends FeatureComponent<ResourceId> implements On
         private _slotService: SlotsService,
         private _logService: LogService,
         private _authZService: AuthzService,
+        private _scenarioService: ScenarioService,
         private _injector: Injector
     ) {
         super('AddSlotComponent', _injector, SiteTabIds.deploymentSlotsConfig);
@@ -73,33 +80,19 @@ export class AddSlotComponent extends FeatureComponent<ResourceId> implements On
 
         this.close = new Subject<boolean>();
 
+        this._slotsInfoCache = new SlotsInfoCache(this._authZService, this._siteService);
+        this._configSrcSubject = new Subject<string>();
+
+        this._configSrcSubject
+            .takeUntil(this.ngUnsubscribe)
+
         const nameCtrl = this._fb.control({ value: null, disabled: true });
-        const cloneCtrl = this._fb.control({ value: false, disabled: true });
         const configSrcCtrl = this._fb.control({ value: null, disabled: true });
 
         this.addForm = this._fb.group({
             name: nameCtrl,
-            clone: cloneCtrl,
             configSrc: configSrcCtrl
         });
-
-        cloneCtrl.valueChanges
-            .takeUntil(this.ngUnsubscribe)
-            .distinctUntilChanged()
-            .do(_ => {
-                (nameCtrl as CustomFormControl)._msRunValidation = true;
-                nameCtrl.updateValueAndValidity();
-            })
-            .subscribe(v => {
-                if (!v) {
-                    configSrcCtrl.clearValidators();
-                    configSrcCtrl.clearAsyncValidators();
-                    configSrcCtrl.setValue(null);
-                    configSrcCtrl.disable();
-                } else {
-                    configSrcCtrl.enable();
-                }
-            });
 
         configSrcCtrl.valueChanges
             .takeUntil(this.ngUnsubscribe)
@@ -108,7 +101,7 @@ export class AddSlotComponent extends FeatureComponent<ResourceId> implements On
                 (nameCtrl as CustomFormControl)._msRunValidation = true;
                 nameCtrl.updateValueAndValidity();
             })
-            .filter(v => !!v)
+            .filter(v => v && v !== '-')
             .switchMap(srcId => {
                 this.checkingConfigSrc = true;
                 this.configSrcReadFailure = null;
@@ -133,6 +126,28 @@ export class AddSlotComponent extends FeatureComponent<ResourceId> implements On
 
                 this.checkingConfigSrc = false;
             });
+    }
+
+    public handleCloneCtrlChange(value: boolean) {
+        if (this.addForm) {
+            const nameCtrl = this.addForm.controls['name'] as CustomFormControl;
+            if (nameCtrl) {
+                nameCtrl._msRunValidation = true;
+                nameCtrl.updateValueAndValidity();
+            }
+
+            const configSrcCtrl = this.addForm.controls['configSrc'] as CustomFormControl;
+            if (configSrcCtrl) {
+                if (value) {
+                    configSrcCtrl.clearValidators();
+                    configSrcCtrl.clearAsyncValidators();
+                    configSrcCtrl.setValue(null);
+                    configSrcCtrl.disable();
+                } else {
+                    configSrcCtrl.enable();
+                }
+            }
+        }
     }
 
     protected setup(inputEvents: Observable<ResourceId>) {
@@ -161,7 +176,7 @@ export class AddSlotComponent extends FeatureComponent<ResourceId> implements On
                     this._authZService.hasPermission(this._siteId, [AuthzService.writeScope]),
                     this._authZService.hasReadOnlyLock(this._siteId));
             })
-            .do(r => {
+            .mergeMap(r => {
                 const siteResult = r[0];
                 const slotsResult = r[1];
                 const hasWritePermission = r[2];
@@ -183,17 +198,14 @@ export class AddSlotComponent extends FeatureComponent<ResourceId> implements On
                 if (success) {
                     this._slotsArm = slotsResult.result.value;
                     this._slotsArm.unshift(siteResult.result);
-
-                    const sku = siteResult.result.properties.sku.toLowerCase();
-
-                    let slotsQuota = 0;
-                    if (sku === 'dynamic') {
-                        slotsQuota = 2;
-                    } else if (sku === 'standard') {
-                        slotsQuota = 5;
-                    } else if (sku === 'premium') {
-                        slotsQuota = 20;
-                    }
+                    return this._scenarioService.checkScenarioAsync(ScenarioIds.getSiteSlotLimits, {site: siteResult.result});
+                } else {
+                    return Observable.of(null);
+                }
+            })
+            .do(r => {
+                if (r && r.status === 'enabled') {
+                    const slotsQuota = r.data;
 
                     if (this._slotsArm && this._slotsArm.length >= slotsQuota) {
                         this.slotsQuotaMessage = this._translateService.instant(PortalResources.slotNew_quotaReached, { quota: slotsQuota });
@@ -207,7 +219,6 @@ export class AddSlotComponent extends FeatureComponent<ResourceId> implements On
 
     private _setupForm() {
         const nameCtrl = this.addForm.get('name');
-        const cloneCtrl = this.addForm.get('clone')
         const configSrcCtrl = this.addForm.get('configSrc')
 
         if (!this.hasCreateAcess || !this._slotsArm) {
@@ -215,11 +226,6 @@ export class AddSlotComponent extends FeatureComponent<ResourceId> implements On
             nameCtrl.clearValidators();
             nameCtrl.clearAsyncValidators();
             nameCtrl.disable();
-
-            cloneCtrl.clearValidators();
-            cloneCtrl.clearAsyncValidators();
-            cloneCtrl.setValue(false);
-            cloneCtrl.disable();
 
             configSrcCtrl.clearValidators();
             configSrcCtrl.clearAsyncValidators();
@@ -235,11 +241,13 @@ export class AddSlotComponent extends FeatureComponent<ResourceId> implements On
             nameCtrl.enable();
 
             if (this._slotsArm && this._slotsArm.length > 0) {
+                const options: DropDownElement<string>[] = [
+                    {
+                        displayLabel: this._translateService.instant(`Don't clone settings`),
+                        value: '-'
+                    }
+                ];
 
-                cloneCtrl.enable();
-                configSrcCtrl.enable();
-
-                const options: DropDownElement<string>[] = [];
                 this._slotsArm.forEach(s => {
                     options.push({
                         displayLabel: s.properties.name,
@@ -247,14 +255,9 @@ export class AddSlotComponent extends FeatureComponent<ResourceId> implements On
                     });
                 })
                 this.configSrcDropDownOptions = options;
-
+                configSrcCtrl.enable();
+                configSrcCtrl.setValue('-');
             } else {
-
-                cloneCtrl.clearValidators();
-                cloneCtrl.clearAsyncValidators();
-                cloneCtrl.setValue(false);
-                cloneCtrl.disable();
-
                 configSrcCtrl.clearValidators();
                 configSrcCtrl.clearAsyncValidators();
                 configSrcCtrl.setValue(null);

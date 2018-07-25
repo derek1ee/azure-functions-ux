@@ -8,7 +8,7 @@ import { FeatureComponent } from 'app/shared/components/feature-component';
 import { ArmObj, ResourceId } from 'app/shared/models/arm/arm-obj';
 import { Site } from 'app/shared/models/arm/site';
 import { SiteConfig } from 'app/shared/models/arm/site-config';
-import { Links, LogCategories, SiteTabIds } from 'app/shared/models/constants';
+import { Links, LogCategories, ScenarioIds, SiteTabIds } from 'app/shared/models/constants';
 import { PortalResources } from 'app/shared/models/portal-resources';
 import { RoutingRule } from 'app/shared/models/arm/routing-rule';
 import { ArmSiteDescriptor } from 'app/shared/resourceDescriptors';
@@ -19,6 +19,7 @@ import { SiteService } from 'app/shared/services/site.service';
 import { PortalService } from 'app/shared/services/portal.service';
 import { RoutingSumValidator } from 'app/shared/validators/routingSumValidator';
 import { DecimalRangeValidator } from 'app/shared/validators/decimalRangeValidator';
+import { ScenarioService } from 'app/shared/services/scenario/scenario.service';
 
 // TODO [andimarc]: disable all controls when the sidepanel is open
 
@@ -40,7 +41,7 @@ export class DeploymentSlotsComponent extends FeatureComponent<TreeViewInfo<Site
     public keepVisible: boolean;
 
     public featureSupported: boolean;
-    public canUpgrade: boolean;
+    public canScaleUp: boolean;
 
     public mainForm: FormGroup;
     public hasWriteAccess: boolean;
@@ -82,6 +83,7 @@ export class DeploymentSlotsComponent extends FeatureComponent<TreeViewInfo<Site
         private _portalService: PortalService,
         private _siteService: SiteService,
         private _translateService: TranslateService,
+        private _scenarioService: ScenarioService,
         injector: Injector) {
 
         super('SlotsComponent', injector, SiteTabIds.deploymentSlotsConfig);
@@ -136,7 +138,7 @@ export class DeploymentSlotsComponent extends FeatureComponent<TreeViewInfo<Site
                 this.fetchingPermissions = true;
 
                 this.featureSupported = false;
-                this.canUpgrade = false;
+                this.canScaleUp = false;
 
                 this.hasWriteAccess = false;
                 this.hasSwapAccess = false;
@@ -195,33 +197,6 @@ export class DeploymentSlotsComponent extends FeatureComponent<TreeViewInfo<Site
                         this.siteArm = siteResult.result;
                         this.relativeSlotsArm = slotsResult.result.value;
                     }
-
-                    // TODO [andimarc]: Make sure scale-up control is not showm for Dynamic SKU
-                    const sku = this.siteArm.properties.sku.toLowerCase();
-
-                    let slotsQuota = 0;
-                    if (sku === 'dynamic') {
-                        slotsQuota = 2;
-                        this.canUpgrade = false;
-                    } else if (sku === 'standard') {
-                        slotsQuota = 5;
-                        this.canUpgrade = true;
-                    } else if (sku === 'premium') {
-                        slotsQuota = 20;
-                        this.canUpgrade = false;
-                    } else {
-                        this.canUpgrade = true;
-                    }
-
-                    this.featureSupported = !!slotsQuota;
-
-                    if (this.featureSupported && this.relativeSlotsArm && (this.relativeSlotsArm.length + 1) >= slotsQuota) {
-                        let quotaMessage = this._translateService.instant(PortalResources.slotNew_quotaReached, { quota: slotsQuota });
-                        if (this.canUpgrade) {
-                            quotaMessage = quotaMessage + ' ' + this._translateService.instant(PortalResources.slotNew_quotaUpgrade);
-                        }
-                        this.slotsQuotaMessage = quotaMessage;
-                    }
                 }
 
                 this.loadingFailed = !success;
@@ -243,12 +218,14 @@ export class DeploymentSlotsComponent extends FeatureComponent<TreeViewInfo<Site
                     return Observable.zip(
                         this._authZService.hasPermission(this.resourceId, [AuthzService.writeScope]),
                         this._authZService.hasPermission(this.resourceId, [AuthzService.actionScope]),
-                        this._authZService.hasReadOnlyLock(this.resourceId));
+                        this._authZService.hasReadOnlyLock(this.resourceId),
+                        this._scenarioService.checkScenarioAsync(ScenarioIds.getSiteSlotLimits, {site: siteResult.result}));
                 } else {
                     return Observable.zip(
                         Observable.of(false),
                         Observable.of(false),
-                        Observable.of(true)
+                        Observable.of(true),
+                        Observable.of(null)
                     );
                 }
             })
@@ -256,10 +233,22 @@ export class DeploymentSlotsComponent extends FeatureComponent<TreeViewInfo<Site
                 const hasWritePermission = r[0];
                 const hasSwapPermission = r[1];
                 const hasReadOnlyLock = r[2];
+                const slotsQuota = r[3] ? r[3].data : 0;
+                this.canScaleUp = this.siteArm && this._scenarioService.checkScenario(ScenarioIds.addScaleUp, {site: this.siteArm}).status != 'disabled';
 
                 this.hasWriteAccess = hasWritePermission && !hasReadOnlyLock;
 
                 this.hasSwapAccess = this.hasWriteAccess && hasSwapPermission;
+
+                this.featureSupported = slotsQuota === -1 || slotsQuota >= 1;
+
+                if (this.featureSupported && this.relativeSlotsArm && (this.relativeSlotsArm.length + 1) >= slotsQuota) {
+                    let quotaMessage = this._translateService.instant(PortalResources.slotNew_quotaReached, { quota: slotsQuota });
+                    if (this.canScaleUp) {
+                        quotaMessage = quotaMessage + ' ' + this._translateService.instant(PortalResources.slotNew_quotaUpgrade);
+                    }
+                    this.slotsQuotaMessage = quotaMessage;
+                }
 
                 this.fetchingPermissions = false;
             });

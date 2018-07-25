@@ -101,6 +101,19 @@ export class AzureEnvironment extends Environment {
             id: ScenarioIds.appInsightsConfigurable,
             runCheckAsync: (input: ScenarioCheckInput) => this._getApplicationInsightsId(input)
         };
+
+        this.scenarioChecks[ScenarioIds.addScaleUp] = {
+            id: ScenarioIds.addScaleUp,
+            runCheck: (input: ScenarioCheckInput) => {
+                const disabled = input
+                    && input.site
+                    && (input.site.properties.sku === ServerFarmSku.dynamic
+                        || input.site.properties.sku === ServerFarmSku.isolated
+                        || input.site.properties.sku === ServerFarmSku.premium
+                        || input.site.properties.sku === ServerFarmSku.premiumV2);
+                return { status: disabled ? 'disabled' : 'enabled' };
+            }
+        };
     }
 
     public isCurrentEnvironment(input?: ScenarioCheckInput): boolean {

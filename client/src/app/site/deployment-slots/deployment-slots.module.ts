@@ -26,13 +26,14 @@ import 'rxjs/add/observable/timer';
 import 'rxjs/add/observable/throw';
 import 'rxjs/add/observable/zip';
 import { SidebarModule } from 'ng-sidebar';
+import { NgSelectModule } from '@ng-select/ng-select';
 
 @NgModule({
   entryComponents: [
     DeploymentSlotsComponent
   ],
   imports: [
-    TranslateModule.forChild(), SharedModule, SharedFunctionsModule, SidebarModule
+    TranslateModule.forChild(), SharedModule, SharedFunctionsModule, SidebarModule, NgSelectModule
   ],
   declarations: [
     DeploymentSlotsComponent,

@@ -1,4 +1,4 @@
-<div *ngIf="!fetchingContent && !featureSupported && canUpgrade" class="scale-up-container">
+<div *ngIf="!fetchingContent && !featureSupported && canScaleUp" class="scale-up-container">
 
     <div load-image="image/scale-up.svg" class="icon-large"></div>
     <div class="scale-up-message">
@@ -16,10 +16,11 @@
 
 </div>
 
+<!--backdropClass="sidebar-backdrop-deployment-slots"-->
 <ng-sidebar-container
     *ngIf="keepVisible || featureSupported || loadingFailed"
     class="sidebar-container"
-    backdropClass="sidebar-backdrop-deployment-slots"
+    backdropClass="ng-sidebar__backdrop"
     [animate]="true">
 
     <div ng-sidebar-content>
@@ -85,7 +86,7 @@
                     typeClass="info"
                     [infoText]="slotsQuotaMessage"
                     infoActionIcon='image/scale-up.svg'
-                    [infoActionFn]="canUpgrade ? slotsQuotaScaleUp : null">
+                    [infoActionFn]="canScaleUp ? slotsQuotaScaleUp : null">
                 </info-box>
 
                 <div class="slots-header-container">
@@ -220,13 +221,13 @@
         [closeOnClickBackdrop]="false"
         [showBackdrop]="true">
 
-        <div class="flyout-liner">
+        <!--<div class="flyout-liner">-->
             <swap-slots
                 *ngIf="swapControlsOpen"
                 [resourceIdInput]="resourceId"
                 (close)="hideControls($event)">
             </swap-slots>
-        </div>
+        <!--</div>-->
     </ng-sidebar>
 
     <ng-sidebar
@@ -243,13 +244,13 @@
         [closeOnClickBackdrop]="false"
         [showBackdrop]="true">
 
-        <div class="flyout-liner">
+        <!--<div class="flyout-liner">-->
             <add-slot
                 *ngIf="addControlsOpen"
                 [resourceId]="resourceId"
                 (close)="hideControls($event)">
             </add-slot>
-        </div>
+        <!--</div>-->
     </ng-sidebar>
 
 </ng-sidebar-container>

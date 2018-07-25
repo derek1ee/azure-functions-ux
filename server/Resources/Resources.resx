@@ -496,6 +496,9 @@
   <data name="create" xml:space="preserve">
     <value>Create</value>
   </data>
+  <data name="add" xml:space="preserve">
+    <value>Add</value>
+  </data>
   <data name="dashboard_yourTrialExpiered" xml:space="preserve">
     <value>Your trial has expired</value>
   </data>
@@ -3678,5 +3681,8 @@ Set to "External URL" to use an API definition that is hosted elsewhere.</value>
   </data>
   <data name="communityTemplatesDescription" xml:space="preserve">
     <value>Not finding what you’re looking for? Check out the Serverless Library, our gallery of community created templates, for inspiration!</value>
+  </data>
+  <data name="cloneConfigLoadFailure" xml:space="preserve">
+    <value>Failed to retrieve source configuration</value>
   </data>
 </root>

@@ -23,8 +23,8 @@ import { PortalService } from 'app/shared/services/portal.service';
 
 interface SlotInfo {
     siteArm: ArmObj<Site>,
-    hasSiteAuth?: boolean,
-    hasSwapAccess?: boolean
+    hasSwapAccess?: boolean,
+    hasSiteAuth?: boolean
 }
 
 @Component({
@@ -56,6 +56,7 @@ export class SwapSlotsComponent extends FeatureComponent<ResourceId> implements 
     public isValid: boolean;
 
     public previewLink: string;
+
     public phase: null | 'phaseOne' | 'phaseTwo' | 'complete';
 
     public successMessage = null;
@@ -168,10 +169,14 @@ export class SwapSlotsComponent extends FeatureComponent<ResourceId> implements 
 
                     this._slotsMap[this._resourceId].hasSiteAuth = siteConfigResult.result.properties.siteAuthEnabled;
 
-                    const slotConfigNames = slotConfigNamesResult.result.properties;
-                    const hasStickySettings = slotConfigNames.appSettingNames.length > 0 || slotConfigNames.connectionStringNames.length > 0;
+                    const appSettingNames = slotConfigNamesResult.result.properties.appSettingNames || [];
+                    const connectionStringNames = slotConfigNamesResult.result.properties.connectionStringNames || [];
+                    const hasStickySettings = appSettingNames.length > 0 || connectionStringNames.length > 0
 
                     this.swapForm.controls['src'].setValue(this._resourceId);
+
+                    if (this._slotsMap[this._resourceId].siteArm.properties.targetSwapSlot)
+
                     this.swapForm.controls['dest'].setValue(null);
 
                     const multiPhaseCtrl = this.swapForm.controls['multiPhase'];
