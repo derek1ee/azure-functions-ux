@@ -14,6 +14,7 @@ import { LogService } from '../services/log.service';
 })
 export class InvalidmessageDirective implements OnInit, OnDestroy {
     @Input() invalidmessage: string;
+    @Input() errorkey: string;
     control: AbstractControl;
     hasView = false;
     controlValue$: Observable<any>;
@@ -92,7 +93,7 @@ export class InvalidmessageDirective implements OnInit, OnDestroy {
         if (this.control.invalid && (this.control.dirty || this.control.touched || this.hasSubmitted)) {
             this.render.setStyle(this.loadingElement, 'display', 'none');
             this.render.removeStyle(this.errorElement, 'display');
-            const errMessage = this.firstErrorMessage;
+            const errMessage = this.firstOrSpecifiedErrorMessage;
             this.render.removeChild(this.errorElement, this.errorTextElement);
             this.errorTextElement = this.render.createText(errMessage);
             this.render.appendChild(this.errorElement, this.errorTextElement);
@@ -105,10 +106,14 @@ export class InvalidmessageDirective implements OnInit, OnDestroy {
         }
     }
 
-    get firstErrorMessage(): string {
+    get firstOrSpecifiedErrorMessage(): string {
         if (this.control && this.control.errors) {
             if (Object.keys(this.control.errors).length > 0) {
-                return this.control.errors[Object.keys(this.control.errors)[0]];
+                if (this.errorkey) {
+                    return this.control.errors[this.errorkey] || '';
+                } else {
+                    return this.control.errors[Object.keys(this.control.errors)[0]];
+                }
             }
         }
         return '';

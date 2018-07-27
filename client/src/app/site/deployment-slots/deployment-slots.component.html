@@ -68,11 +68,23 @@
 
                 <!-- TODO [andiamrc]: Provide more granular details for permissions errors -->
                 <!-- TODO [andiamrc]: Add permissions error strings to Resources -->
-                <info-box
-                    *ngIf="!fetchingPermissions && (!hasWriteAccess || !hasSwapAccess)"
-                    typeClass="warning"
-                    [infoText]="(!hasSwapAccess ? 'no swap access\r\n' : '') + 'no write access'">
-                </info-box>
+                <ng-container *ngIf="!fetchingPermissions">
+
+                    <info-box
+                        *ngIf="!hasWriteAccess"
+                        typeClass="warning"
+                        [infoText]="('no write access' | translate)"
+                        [dismissable]="true">
+                    </info-box>
+
+                    <info-box
+                        *ngIf="!hasSwapAccess"
+                        typeClass="warning"
+                        [infoText]="('no swap access' | translate)"
+                        [dismissable]="true">
+                    </info-box>
+
+                </ng-container>
 
                 <!-- TODO [andiamrc]: Provide more granular details for loading failures -->
                 <info-box
@@ -87,6 +99,18 @@
                     [infoText]="slotsQuotaMessage"
                     infoActionIcon='image/scale-up.svg'
                     [infoActionFn]="canScaleUp ? slotsQuotaScaleUp : null">
+                </info-box>
+
+                <info-box
+                    *ngIf="addStatusMessage"
+                    [typeClass]="addStatusClass"
+                    [infoText]="addStatusMessage">
+                </info-box>
+
+                <info-box
+                    *ngIf="swapStatusMessage"
+                    [typeClass]="swapStatusClass"
+                    [infoText]="swapStatusMessage">
                 </info-box>
 
                 <div class="slots-header-container">
@@ -221,13 +245,12 @@
         [closeOnClickBackdrop]="false"
         [showBackdrop]="true">
 
-        <!--<div class="flyout-liner">-->
-            <swap-slots
-                *ngIf="swapControlsOpen"
-                [resourceIdInput]="resourceId"
-                (close)="hideControls($event)">
-            </swap-slots>
-        <!--</div>-->
+        <swap-slots
+            *ngIf="swapControlsOpen"
+            [resourceIdInput]="resourceId"
+            (close)="receiveSwapParams($event)">
+        </swap-slots>
+
     </ng-sidebar>
 
     <ng-sidebar
@@ -244,13 +267,12 @@
         [closeOnClickBackdrop]="false"
         [showBackdrop]="true">
 
-        <!--<div class="flyout-liner">-->
-            <add-slot
-                *ngIf="addControlsOpen"
-                [resourceId]="resourceId"
-                (close)="hideControls($event)">
-            </add-slot>
-        <!--</div>-->
+        <add-slot
+            *ngIf="addControlsOpen"
+            [resourceId]="resourceId"
+            (parameters)="receiveAddParams($event)">
+        </add-slot>
+
     </ng-sidebar>
 
 </ng-sidebar-container>

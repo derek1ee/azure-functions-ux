@@ -1,8 +1,8 @@
 import { VirtualApplication } from './virtual-application';
 import { HandlerMapping } from './handler-mapping';
 import { RoutingRule } from './routing-rule';
-import { ConnectionStrings } from './connection-strings';
-import { ApplicationSettings } from './application-settings';
+import { ConnectionStringProperyBag } from './connection-strings';
+import { ApplicationSettingPropertyBag } from './application-settings';
 import { ProviderType } from '../../../site/deployment-center/Models/deployment-enums';
 
 export interface SiteConfig {
@@ -35,8 +35,8 @@ export interface SiteConfig {
         rampUpRules: RoutingRule[];
     };
     siteAuthEnabled: boolean;
-    appSettings?: ApplicationSettings;
-    connectionStrings?: ConnectionStrings;
+    appSettings?: ApplicationSettingPropertyBag;
+    connectionStrings?: ConnectionStringProperyBag;
     ftpsState?: string;
     http20Enabled: boolean;
 }

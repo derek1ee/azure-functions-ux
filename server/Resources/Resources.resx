@@ -2176,6 +2176,12 @@ Set to "External URL" to use an API definition that is hosted elsewhere.</value>
   <data name="slotNew_nameLabel" xml:space="preserve">
     <value>Name</value>
   </data>
+  <data name="slotNew_cloneConfigLabel" xml:space="preserve">
+    <value>Clone settings from:</value>
+  </data>
+  <data name="slotNew_dontCloneConfig" xml:space="preserve">
+    <value>Don't clone settings</value>
+  </data>
   <data name="slotNew_heading" xml:space="preserve">
     <value>Create a new deployment slot</value>
   </data>

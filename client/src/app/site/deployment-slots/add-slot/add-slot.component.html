@@ -1,6 +1,5 @@
 <div
-    [is-dirty]="!!dirtyMessage || (addForm && addForm.dirty && !created)"
-    [is-dirty-message]="dirtyMessage">
+    [is-dirty]="(addForm && addForm.dirty)">
 
     <div class="header-container">
         <span
@@ -11,6 +10,23 @@
     </div>
 
     <div class="body-container" [formGroup]="addForm" novalidate>
+
+        <info-box *ngIf="slotsQuotaMessage"
+            typeClass="info"
+            [infoText]="slotsQuotaMessage">
+        </info-box>
+
+        <!-- TODO [andimarc]: replace 'no create acess' with Resource string -->
+        <info-box *ngIf="!loading && !hasCreateAcess"
+            typeClass="error"
+            [infoText]="'no create access' | translate">
+        </info-box>
+
+        <info-box
+            *ngIf="loadingFailed"
+            typeClass="error"
+            [infoText]="Resources.error_unableToLoadSlotsList | translate">
+        </info-box>
 
         <div>
             <div class="label-above">
@@ -24,65 +40,35 @@
             <div invalidmessage="name"></div>
 
             <div class="label-above">
-                {{ 'Clone settings from:' | translate }}
-                <div *ngIf="checkingConfigSrc" class="spinner"></div>
+                {{ Resources.slotNew_cloneConfigLabel | translate }}
             </div>
-
-            <!--
-            <drop-down
-                [control]="addForm ? addForm.controls['configSrc'] : null"
-                [options]="configSrcDropDownOptions || []"
-                [setDefault]="false">
-            </drop-down>
-
-            <ng-select *ngIf="wizard?.wizardValues?.deploymentSlotSetting?.newDeploymentSlot === false" class="custom-select" [loading]="deploymentSlotsLoading"
-            [clearable]="false" [items]="existingDeploymentSlotsList" bindLabel="displayLabel" bindValue="value" placeholder="{{'selectExisingSlot' | translate}}"
-            [(ngModel)]="selectedDeploymentSlot" formControlName="deploymentSlot">
-            </ng-select>
-            -->
 
             <div>
                 <ng-select
                     [loading]="false"
                     [clearable]="false"
-                    [items]="configSrcDropDownOptions"
+                    [items]="cloneSrcIdDropDownOptions"
                     bindLabel="displayLabel"
                     bindValue="value"
-                    placeholder="{{'foo' | translate}}"
                     class="custom-select"
-                    formControlName="configSrc">
+                    formControlName="cloneSrcId">
                 </ng-select>
             </div>
-            <div invalidmessage="configSrc"></div>
+            <div invalidmessage="cloneSrcId"></div>
 
-            <div *ngIf="configSrcReadFailure">
-                {{ configSrcReadFailure | translate }}
-            </div>
         </div>
 
-        <div *ngIf="creating" class="submit-spinner">
-            <div class="spinner large"></div>
-            <div>Create In Progress</div>
-        </div>
-
-        <div *ngIf="created">
-            <div></div>
-            {{ 'slot created' | translate }}
-        </div>
-
-        <div *ngIf="!creating && !created">
+        <div>
             <button
                 class="custom-button"
                 [disabled]="addForm.invalid || addForm.pristine || !hasCreateAcess || !!slotsQuotaMessage"
-                (click)="createSlot()">
+                (click)="submit()">
                 {{ Resources.add | translate }}
             </button>
             <button
-                role="button"
                 class="custom-button"
-                [disabled]="!!creating"
-                (click)="closePanel()">
-                {{ 'Cancel' | translate }}
+                (click)="cancel()">
+                {{ Resources.cancel | translate }}
             </button>
         </div>
 

@@ -686,6 +686,8 @@
     public static slotCreateOperationInProgressWarning = 'slotCreateOperationInProgressWarning';
     public static slotNew = 'slotNew';
     public static slotNew_nameLabel = 'slotNew_nameLabel';
+    public static slotNew_cloneConfigLabel = 'slotNew_cloneConfigLabel';
+    public static slotNew_dontCloneConfig = 'slotNew_dontCloneConfig';
     public static slotNew_heading = 'slotNew_heading';
     public static slotNew_desc = 'slotNew_desc';
     public static slotNew_startCreateNotifyTitle = 'slotNew_startCreateNotifyTitle';
@@ -1180,5 +1182,5 @@
     public static disconnectConfirm = 'disconnectConfirm';
     public static communityTemplatesTitle = 'communityTemplatesTitle';
     public static communityTemplatesDescription = 'communityTemplatesDescription';
-    public static cloneConfigLoadFailure = "cloneConfigLoadFailure"
+    public static cloneConfigLoadFailure = "cloneConfigLoadFailure";
 }

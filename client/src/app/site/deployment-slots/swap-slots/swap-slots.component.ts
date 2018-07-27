@@ -16,10 +16,22 @@ import { AuthzService } from 'app/shared/services/authz.service';
 import { CacheService } from 'app/shared/services/cache.service';
 import { LogService } from 'app/shared/services/log.service';
 import { SiteService } from 'app/shared/services/site.service';
-import { PortalService } from 'app/shared/services/portal.service';
 
 // TODO [andimarc]: disable all controls when a swap operation is in progress
 // TODO [andimarc]: disable controls when in phaseTwo or complete
+
+export type OperationType = 'slotsswap' | 'applySlotConfig' | 'resetSlotConfig';
+
+export interface SwapSlotParameters {
+    operationType: OperationType,
+    uri: string,
+    srcName: string,
+    destName: string,
+    swapType: string,
+    previewLink?: string,
+    content?: any
+}
+
 
 interface SlotInfo {
     siteArm: ArmObj<Site>,
@@ -38,23 +50,32 @@ export class SwapSlotsComponent extends FeatureComponent<ResourceId> implements 
         this.setInput(resourceId);
     }
 
-    @Output() close: Subject<boolean>;
+    @Output() close: Subject<SwapSlotParameters>;
 
     public dirtyMessage: string;
+    public isLoading = true;
+    public loadingFailed = false;
 
     public Resources = PortalResources;
     public srcDropDownOptions: DropDownElement<string>[];
     public destDropDownOptions: DropDownElement<string>[];
     public siteResourceId: ResourceId;
+    public siteName: string;
 
-    public slotsNotUnique: boolean;
-    public srcNotSelected: boolean;
-    public srcNoSwapAccess: boolean;
-    public destNotSelected: boolean;
-    public destNoSwapAccess: boolean;
-    public siteAuthConflicts: string[];
-    public isValid: boolean;
+    public hasStickySettings = false;
 
+    public srcPermissionsMessage: string;
+    public destPermissionsMessage: string;
+
+    /*
+        public slotsNotUnique: boolean;
+        public srcNotSelected: boolean;
+        public srcNoSwapAccess: boolean;
+        public destNotSelected: boolean;
+        public destNoSwapAccess: boolean;
+        public siteAuthConflicts: string[];
+        public isValid: boolean;
+    */
     public previewLink: string;
 
     public phase: null | 'phaseOne' | 'phaseTwo' | 'complete';
@@ -84,14 +105,13 @@ export class SwapSlotsComponent extends FeatureComponent<ResourceId> implements 
         private _cacheService: CacheService,
         private _fb: FormBuilder,
         private _logService: LogService,
-        private _portalService: PortalService,
         private _siteService: SiteService,
         private _translateService: TranslateService,
         injector: Injector
     ) {
         super('SwapSlotsComponent', injector, SiteTabIds.deploymentSlotsConfig);
 
-        this.close = new Subject<boolean>();
+        this.close = new Subject<SwapSlotParameters>();
 
         // TODO [andimarc]
         // For ibiza scenarios, this needs to match the deep link feature name used to load this in ibiza menu
@@ -99,11 +119,25 @@ export class SwapSlotsComponent extends FeatureComponent<ResourceId> implements 
         this.isParentComponent = true;
 
         this._setupSubscriptions();
+
+        const srcIdCtrl = this._fb.control({ value: null, disabled: true });
+        const srcConfigCtrl = this._fb.control({ value: null, disabled: true });
+
+        const destIdCtrl = this._fb.control({ value: null, disabled: true });
+        const desConfigCtrl = this._fb.control({ value: null, disabled: true });
+
+        const multiPhaseCtrl = this._fb.control({ value: false, disabled: true });
+
+        this.swapForm = this._fb.group({
+            srcId: srcIdCtrl,
+            srcConfig: srcConfigCtrl,
+            destId: destIdCtrl,
+            desConfig: desConfigCtrl,
+            multiPhase: multiPhaseCtrl,
+        });
     }
 
     protected setup(inputEvents: Observable<ResourceId>) {
-        //TODO [andimarc]: detect if we are already in phase two of a swap
-
         return inputEvents
             .distinctUntilChanged()
             .switchMap(resourceId => {
@@ -111,9 +145,15 @@ export class SwapSlotsComponent extends FeatureComponent<ResourceId> implements 
 
                 this.previewLink = null;
 
+                this.isLoading = true;
+                this.loadingFailed = false;
+
                 this.successMessage = null;
 
                 this.swapping = false;
+
+                this.srcPermissionsMessage = null;
+                this.destPermissionsMessage = null;
 
                 this.srcDropDownOptions = [];
                 this.destDropDownOptions = [];
@@ -121,8 +161,11 @@ export class SwapSlotsComponent extends FeatureComponent<ResourceId> implements 
 
                 this._swappedOrCancelled = false;
 
+                this._resetForm();
+
                 const siteDescriptor = new ArmSiteDescriptor(resourceId);
                 this.siteResourceId = siteDescriptor.getSiteOnlyResourceId();
+                this.siteName = siteDescriptor.site;
 
                 return Observable.zip(
                     this._siteService.getSite(this.siteResourceId),
@@ -131,36 +174,36 @@ export class SwapSlotsComponent extends FeatureComponent<ResourceId> implements 
                     this._siteService.getSiteConfig(this._resourceId)
                 );
             })
-            .do(r => {
+            .mergeMap(r => {
                 const siteResult = r[0];
                 const slotsResult = r[1];
                 const slotConfigNamesResult = r[2];
                 const siteConfigResult = r[3];
 
-                let success = true;
-
                 if (!siteResult.isSuccessful) {
                     this._logService.error(LogCategories.swapSlots, '/swap-slots', siteResult.error.result);
-                    success = false;
+                    this.loadingFailed = true;
                 }
                 if (!slotsResult.isSuccessful) {
                     this._logService.error(LogCategories.swapSlots, '/swap-slots', slotsResult.error.result);
-                    success = false;
+                    this.loadingFailed = true;
                 }
                 if (!slotConfigNamesResult.isSuccessful) {
                     this._logService.error(LogCategories.swapSlots, '/swap-slots', slotConfigNamesResult.error.result);
-                    success = false;
+                    this.loadingFailed = true;
                 }
                 if (!siteConfigResult.isSuccessful) {
                     this._logService.error(LogCategories.swapSlots, '/swap-slots', siteConfigResult.error.result);
-                    success = false;
+                    this.loadingFailed = true;
                 }
 
-                if (success) {
+                if (!this.loadingFailed) {
+                    let destId: string = null;
                     const options: DropDownElement<string>[] = [];
 
                     [siteResult.result, ...slotsResult.result.value].forEach(s => {
                         this._slotsMap[s.id] = { siteArm: s };
+                        destId = (!destId && s.id !== this._resourceId) ? s.id : destId;
                         options.push({
                             displayLabel: s.properties.name,
                             value: s.id
@@ -169,31 +212,133 @@ export class SwapSlotsComponent extends FeatureComponent<ResourceId> implements 
 
                     this._slotsMap[this._resourceId].hasSiteAuth = siteConfigResult.result.properties.siteAuthEnabled;
 
+                    // check for sticky settings
                     const appSettingNames = slotConfigNamesResult.result.properties.appSettingNames || [];
                     const connectionStringNames = slotConfigNamesResult.result.properties.connectionStringNames || [];
-                    const hasStickySettings = appSettingNames.length > 0 || connectionStringNames.length > 0
+                    this.hasStickySettings = appSettingNames.length > 0 || connectionStringNames.length > 0
 
-                    this.swapForm.controls['src'].setValue(this._resourceId);
 
-                    if (this._slotsMap[this._resourceId].siteArm.properties.targetSwapSlot)
+                    // check for targetSwapSlot
+                    const currSlot = this._slotsMap[this._resourceId];
+                    const targetSwapSlot = currSlot ? currSlot.siteArm.properties.targetSwapSlot : null;
 
-                    this.swapForm.controls['dest'].setValue(null);
-
-                    const multiPhaseCtrl = this.swapForm.controls['multiPhase'];
-                    multiPhaseCtrl.setValue(false);
-                    if (hasStickySettings) {
-                        multiPhaseCtrl.enable();
-                    } else {
-                        multiPhaseCtrl.disable();
+                    if (targetSwapSlot) {
+                        // We're already in Phase2
+                        destId = targetSwapSlot.toLowerCase() === 'production' ?
+                            this.siteResourceId :
+                            this.siteResourceId + '/slots/' + targetSwapSlot.toLowerCase();
                     }
 
                     this.srcDropDownOptions = JSON.parse(JSON.stringify(options));
                     this.srcDropDownOptions.forEach(o => o.default = o.value === this._resourceId);
 
                     this.destDropDownOptions = JSON.parse(JSON.stringify(options));
+                    this.destDropDownOptions.forEach(o => o.default = o.value === destId);
+
+                    return Observable.zip(
+                        Observable.of(!!targetSwapSlot),
+                        Observable.of(destId),
+                        !targetSwapSlot ? Observable.of(null) : this._authZService.hasPermission(this._resourceId, [AuthzService.writeScope]),
+                        !targetSwapSlot ? Observable.of(null) : this._authZService.hasPermission(this._resourceId, [AuthzService.actionScope]),
+                        !targetSwapSlot ? Observable.of(null) : this._authZService.hasReadOnlyLock(this._resourceId),
+                        !targetSwapSlot ? Observable.of(null) : this._authZService.hasPermission(destId, [AuthzService.writeScope]),
+                        !targetSwapSlot ? Observable.of(null) : this._authZService.hasPermission(destId, [AuthzService.actionScope]),
+                        !targetSwapSlot ? Observable.of(null) : this._authZService.hasReadOnlyLock(destId)
+                    );
+
+                } else {
+                    return Observable.of(null);
                 }
+            })
+            .do(r => {
+                if (r) {
+
+                    const isPhaseTwo = r[0];
+                    const destId = r[1];
+
+                    if (isPhaseTwo) {
+                        this.swapForm.controls['srcId'].setValue(this._resourceId);
+                        this.swapForm.controls['destId'].setValue(destId);
+
+                        const srcWritePermission = r[2];
+                        const srcSwapPermission = r[3];
+                        const srcReadOnlyLock = r[4];
+                        const destWritePermission = r[5];
+                        const destSwapPermission = r[6];
+                        const destReadOnlyLock = r[7];
+
+
+                        if (!srcWritePermission) {
+                            this.srcPermissionsMessage = this._translateService.instant('no write permission on slot \'{0}\'');
+                        } else if (srcSwapPermission) {
+                            this.srcPermissionsMessage = this._translateService.instant('no swap permission on slot \'{0}\'');
+                        } else if (srcReadOnlyLock) {
+                            this.srcPermissionsMessage = this._translateService.instant('read-only lock on slot \'{0}\'');
+                        } else {
+                            this.srcPermissionsMessage = '';
+                        }
+
+
+                        if (!destWritePermission) {
+                            this.destPermissionsMessage = this._translateService.instant('no write permission on slot \'{0}\'');
+                        } else if (destSwapPermission) {
+                            this.destPermissionsMessage = this._translateService.instant('no swap permission on slot \'{0}\'');
+                        } else if (destReadOnlyLock) {
+                            this.destPermissionsMessage = this._translateService.instant('read-only lock on slot \'{0}\'');
+                        } else {
+                            this.destPermissionsMessage = '';
+                        }
+
+
+                    } else {
+                        this._setupForm();
+                        this.swapForm.controls['srcId'].setValue(this._resourceId);
+                        this.swapForm.controls['destId'].setValue(destId);
+                    }
+                }
+
+                this.isLoading = false;
             });
     }
+
+    private _resetForm() {
+        const srcIdCtrl = this.swapForm.get('srcId');
+        const srcConfigCtrl = this.swapForm.get('srcConfig');
+        const destIdCtrl = this.swapForm.get('destId');
+        const destConfigCtrl = this.swapForm.get('destConfig');
+        const multiPhaseCtrl = this.swapForm.get('multiPhase');
+
+        [srcIdCtrl, srcConfigCtrl, destIdCtrl, destConfigCtrl, multiPhaseCtrl].forEach(ctrl => {
+            ctrl.clearValidators();
+            ctrl.clearAsyncValidators();
+            ctrl.setValue(null);
+            ctrl.disable();
+        });
+    }
+
+    private _setupForm() {
+        const srcIdCtrl = this.swapForm.get('srcId');
+        const srcConfigCtrl = this.swapForm.get('srcConfig');
+        const destIdCtrl = this.swapForm.get('destId');
+        const destConfigCtrl = this.swapForm.get('destConfig');
+        const multiPhaseCtrl = this.swapForm.get('multiPhase');
+
+        srcIdCtrl.enable();
+        //setup validators
+
+        srcConfigCtrl.enable();
+
+        destIdCtrl.enable();
+        //setup validators
+
+        destConfigCtrl.enable();
+
+        if (this.hasStickySettings) {
+            multiPhaseCtrl.enable();
+            //setup validators
+        }
+    }
+
 
     private _setupSubscriptions() {
         this._diffSubject = new Subject<string>();
@@ -254,16 +399,16 @@ export class SwapSlotsComponent extends FeatureComponent<ResourceId> implements 
     private _validateAndDiff() {
         // TODO [andimarc]: user form validation instaed
 
-        const src = this.swapForm ? this.swapForm.controls['src'].value : null;
-        const dest = this.swapForm ? this.swapForm.controls['dest'].value : null;
+        const src = this.swapForm ? this.swapForm.controls['srcId'].value : null;
+        const dest = this.swapForm ? this.swapForm.controls['destId'].value : null;
         const multiPhase = this.swapForm ? this.swapForm.controls['multiPhase'].value : false;
-
-        this.slotsNotUnique = src === dest;
-        this.srcNotSelected = !src;
-        this.destNotSelected = !dest;
-        this.srcNoSwapAccess = !!src && this._slotsMap[src] && !this._slotsMap[src].hasSwapAccess;
-        this.destNoSwapAccess = !!dest && this._slotsMap[dest] && !this._slotsMap[dest].hasSwapAccess;
-
+        /*
+                this.slotsNotUnique = src === dest;
+                this.srcNotSelected = !src;
+                this.destNotSelected = !dest;
+                this.srcNoSwapAccess = !!src && this._slotsMap[src] && !this._slotsMap[src].hasSwapAccess;
+                this.destNoSwapAccess = !!dest && this._slotsMap[dest] && !this._slotsMap[dest].hasSwapAccess;
+        */
         const siteAuthConflicts: string[] = [];
         if (multiPhase) {
             [src, dest].forEach(r => {
@@ -273,20 +418,21 @@ export class SwapSlotsComponent extends FeatureComponent<ResourceId> implements 
             })
 
         }
-        this.siteAuthConflicts = siteAuthConflicts.length === 0 ? null : siteAuthConflicts;
-
-        // TODO [andimarc]: make sure neither src or dest slot have targetSwapSlot set (unless this is phase two of a swap and the value match up)
-
-        this.isValid = !this.slotsNotUnique
-            && !this.srcNotSelected
-            && !this.destNotSelected
-            && !this.srcNoSwapAccess
-            && !this.destNoSwapAccess
-            && !this.siteAuthConflicts;
-
-        if (this.isValid) {
-            this._diffSubject.next(`${src},${dest}`);
-        }
+        /*       this.siteAuthConflicts = siteAuthConflicts.length === 0 ? null : siteAuthConflicts;
+       
+               // TODO [andimarc]: make sure neither src or dest slot have targetSwapSlot set (unless this is phase two of a swap and the value match up)
+       
+               this.isValid = !this.slotsNotUnique
+                   && !this.srcNotSelected
+                   && !this.destNotSelected
+                   && !this.srcNoSwapAccess
+                   && !this.destNoSwapAccess
+                   && !this.siteAuthConflicts;
+       
+               if (this.isValid) {
+                   this._diffSubject.next(`${src},${dest}`);
+               }
+       */
     }
 
     private _getSlotInfo(resourceId: ResourceId, force?: boolean): Observable<SlotInfo> {
@@ -319,11 +465,12 @@ export class SwapSlotsComponent extends FeatureComponent<ResourceId> implements 
         }
     }
 
-    closePanel() {
-        const close = (!this.swapForm || !this.swapForm.dirty || this.phase === 'complete') ? true : confirm('unsaved changes will be lost'); // TODO [andimarc]: add to resources
+    cancel() {
+        const confirmMsg = this._translateService.instant(PortalResources.unsavedChangesWarning);
+        const close = (!this.swapForm || !this.swapForm.dirty || this.phase === 'complete') ? true : confirm(confirmMsg);
 
         if (close) {
-            this.close.next(!!this._swappedOrCancelled);
+            this.close.next(null);
         }
     }
 
@@ -346,23 +493,255 @@ export class SwapSlotsComponent extends FeatureComponent<ResourceId> implements 
     }
 
     swap() {
-        this._submit('swap');
+
+        //this._submit('swap');
     }
+
 
     cancelMultiPhaseSwap() {
         this._submit('cancel');
     }
 
+    slotsSwap(params: SwapSlotParameters) {
+
+        //const operation = this._translateService.instant(PortalResources.swapOperation, { swapType: params.swapType, srcSlot: params.srcName, destSlot: params.destName });
+        //const startMessage = this._translateService.instant(PortalResources.swapStarted, { operation: operation });
+
+        this.setBusy();
+        this.swapping = true;
+
+        this._cacheService.postArm(params.uri, null, null, params.content)
+            .mergeMap(r => {
+                const location = r.headers.get('Location');
+                if (!location) {
+                    return Observable.of({ success: false, error: 'no location header' }); // TODO [andimarc]: use Resource string?
+                } else {
+                    return Observable.interval(1000)
+                        .concatMap(_ => this._cacheService.get(location))
+                        .map((r: Response) => r.status)
+                        .take(30 * 60 * 1000)
+                        .filter(s => s !== 202)
+                        .map(r => { return { success: true, error: null } })
+                        .catch(e => Observable.of({ success: false, error: e }))
+                        .take(1);
+                }
+            })
+            .catch(e => {
+                return Observable.of({ success: false, error: e })
+            })
+            .subscribe(r => {
+                this.dirtyMessage = null;
+                this.clearBusy();
+                this.swapping = false;
+
+                /*
+                let resultMessage = r.success ?
+                    this._translateService.instant(PortalResources.swapSuccess, { operation: operation }) :
+                    this._translateService.instant(PortalResources.swapFailure, { operation: operation, error: JSON.stringify(r.error) });
+                */
+
+                if (!r.success) {
+                    this._logService.error(LogCategories.deploymentSlots, '/deployment-slots', r.error);
+                    // TODO [andimarc]: display error message in an error info box?
+                } else {
+                    this._swappedOrCancelled = true;
+                }
+                // TODO [andimarc]: refresh the _slotsMap entries for the slot(s) involved in the swap
+            });
+    }
+
+    applySlotConfig(params: SwapSlotParameters) {
+
+        //const operation = this._translateService.instant(PortalResources.swapOperation, { swapType: params.swapType, srcSlot: params.srcName, destSlot: params.destName });
+        //const startMessage = this._translateService.instant(PortalResources.swapStarted, { operation: operation });
+
+        this.setBusy();
+        this.swapping = true;
+
+        this._cacheService.postArm(params.uri, null, null, params.content)
+            .mergeMap(r => {
+                return Observable.of({ success: true, error: null });
+            })
+            .catch(e => {
+                return Observable.of({ success: false, error: e })
+            })
+            .subscribe(r => {
+                this.dirtyMessage = null;
+                this.clearBusy();
+                this.swapping = false;
+
+                /*
+                let resultMessage = r.success ?
+                    this._translateService.instant(PortalResources.swapSuccess, { operation: operation }) :
+                    this._translateService.instant(PortalResources.swapFailure, { operation: operation, error: JSON.stringify(r.error) });
+                */
+
+                if (!r.success) {
+                    this._logService.error(LogCategories.deploymentSlots, '/deployment-slots', r.error);
+                    // TODO [andimarc]: display error message in an error info box?
+
+                } else {
+                    this.phase = 'phaseTwo';
+                    this.previewLink = params.previewLink;
+                    this._swappedOrCancelled = true;
+                }
+                // TODO [andimarc]: refresh the _slotsMap entries for the slot(s) involved in the swap
+            });
+    }
+
+    resetSlotConfig(params: SwapSlotParameters) {
+
+        //const operation = this._translateService.instant(PortalResources.swapOperation, { swapType: params.swapType, srcSlot: params.srcName, destSlot: params.destName });
+        //const startMessage = this._translateService.instant(PortalResources.swapCancelStarted, { operation: operation });
+
+        this.setBusy();
+        this.swapping = true;
+
+        this._cacheService.postArm(params.uri, null, null, params.content)
+            .mergeMap(r => {
+                return Observable.of({ success: true, error: null });
+            })
+            .catch(e => {
+                return Observable.of({ success: false, error: e })
+            })
+            .subscribe(r => {
+                this.dirtyMessage = null;
+                this.clearBusy();
+                this.swapping = false;
+
+                /*
+                let resultMessage = r.success ?
+                    this._translateService.instant(PortalResources.swapCancelSuccess, { operation: operation }) :
+                    this._translateService.instant(PortalResources.swapCancelFailure, { operation: operation, error: JSON.stringify(r.error) });
+                */
+
+                if (!r.success) {
+                    this._logService.error(LogCategories.deploymentSlots, '/deployment-slots', r.error);
+                    // TODO [andimarc]: display error message in an error info box?
+                } else {
+                    this._swappedOrCancelled = true;
+                }
+                // TODO [andimarc]: refresh the _slotsMap entries for the slot(s) involved in the swap
+            });
+    }
+
+    public receiveSwapParams(params: SwapSlotParameters) {
+        //this.swapControlsOpen = false;
+
+        if (params) {
+            this.dirtyMessage = this._translateService.instant(PortalResources.swapOperationInProgressWarning);
+
+            const operation = this._translateService.instant(PortalResources.swapOperation, { swapType: params.swapType, srcSlot: params.srcName, destSlot: params.destName });
+
+            //const startMessageResourceString = params.operationType === 'slotsswap' ? PortalResources.swapStarted : PortalResources.swapCancelStarted;
+            //const startMessage = this._translateService.instant(startMessageResourceString, { operation: operation });
+
+            this.setBusy();
+            this.swapping = true;
+
+            this._cacheService.postArm(params.uri, null, null, params.content)
+                .mergeMap(r => {
+                    if (params.operationType === 'slotsswap' && (!this.phase || this.phase === 'phaseTwo')) {
+                        const location = r.headers.get('Location');
+                        if (!location) {
+                            return Observable.of({ success: false, error: 'no location header' });
+                        } else {
+                            return Observable.interval(1000)
+                                .concatMap(_ => this._cacheService.get(location))
+                                .map((r: Response) => r.status)
+                                .take(30 * 60 * 1000)
+                                .filter(s => s !== 202)
+                                .map(r => { return { success: true, error: null } })
+                                .catch(e => Observable.of({ success: false, error: e }))
+                                .take(1);
+                        }
+                    } else {
+                        return Observable.of({ success: true, error: null });
+                    }
+                })
+                .catch(e => {
+                    return Observable.of({ success: false, error: e })
+                })
+                .subscribe(r => {
+                    this.dirtyMessage = null;
+                    this.clearBusy();
+                    this.swapping = false;
+
+                    let resultMessage;
+
+                    if (!r.success) {
+                        this._logService.error(LogCategories.deploymentSlots, '/deployment-slots', r.error);
+
+                        const failureResourceString = params.operationType === 'slotsswap' ? PortalResources.swapFailure : PortalResources.swapCancelFailure;
+                        resultMessage = this._translateService.instant(failureResourceString, { operation: operation, error: JSON.stringify(r.error) });
+
+                        // TODO [andimarc]: display error message in an error info box?
+                    } else {
+                        if (params.operationType === 'slotsswap') {
+                            resultMessage = this._translateService.instant(PortalResources.swapSuccess, { operation: operation })
+
+                            if (!this.phase || this.phase === 'phaseTwo') {
+                                this.phase = 'complete';
+                                this.successMessage = resultMessage;
+                            } else {
+                                this.phase = 'phaseTwo';
+                                this.previewLink = params.previewLink;
+                            }
+                        } else {
+                            resultMessage = this._translateService.instant(PortalResources.swapCancelSuccess, { operation: operation })
+                            this.phase = 'phaseOne';
+                        }
+
+                        this._swappedOrCancelled = true;
+
+                        // TODO [andimarc]: refresh the _slotsMap entries for the slot(s) involved in the swap
+                    }
+                });
+
+        }
+    }
+
+    public _getOperationInputs(operationType: OperationType, phase: 'phaseOne' | 'phaseTwo'): SwapSlotParameters {
+        const srcId = this.swapForm.controls['srcId'].value;
+        const destId = this.swapForm.controls['destId'].value;
+        const srcDescriptor: ArmSiteDescriptor = new ArmSiteDescriptor(srcId);
+        const destDescriptor: ArmSiteDescriptor = new ArmSiteDescriptor(destId);
+
+        const srcName = srcDescriptor.slot || 'production';
+        const destName = destDescriptor.slot || 'production';
+        const previewLink = 'https://' + (this._slotsMap[srcId] as SlotInfo).siteArm.properties.hostNames[0];
+        const content = operationType === 'resetSlotConfig' ? null : { targetSlot: destName };
+
+
+        let swapType = this._translateService.instant(PortalResources.swapFull);
+        if (operationType === 'applySlotConfig') {
+            swapType = this._translateService.instant(PortalResources.swapPhaseOne);
+        } else if (operationType === 'slotsswap' && phase === 'phaseTwo') {
+            swapType = this._translateService.instant(PortalResources.swapPhaseTwo);
+        }
+
+
+        return {
+            operationType: operationType,
+            uri: srcDescriptor.getTrimmedResourceId() + '/' + operationType,
+            srcName: srcName,
+            destName: destName,
+            swapType: swapType,
+            previewLink: previewLink,
+            content: content
+        };
+    }
+
     private _submit(operationType: 'swap' | 'cancel') {
         this.dirtyMessage = this._translateService.instant(PortalResources.swapOperationInProgressWarning);
 
-        if (this.isValid) { // TODO [andimarc]: check if form is valid
+        if (!this.swapForm.pristine && this.swapForm.valid) { // TODO [andimarc]: check if form is valid
             if (this.swapForm.controls['multiPhase'].value && !this.phase) {
                 this.phase = operationType === 'swap' ? 'phaseOne' : 'phaseTwo';
             }
 
-            const srcId = this.swapForm.controls['src'].value;
-            const destId = this.swapForm.controls['dest'].value;
+            const srcId = this.swapForm.controls['srcId'].value;
+            const destId = this.swapForm.controls['destId'].value;
 
             const srcDescriptor: ArmSiteDescriptor = new ArmSiteDescriptor(srcId);
             const destDescriptor: ArmSiteDescriptor = new ArmSiteDescriptor(destId);
@@ -390,43 +769,34 @@ export class SwapSlotsComponent extends FeatureComponent<ResourceId> implements 
 
             const operation = this._translateService.instant(PortalResources.swapOperation, { swapType: swapType, srcSlot: srcName, destSlot: destName });
 
-            const startMessageResourceString = operationType === 'swap' ? PortalResources.swapStarted : PortalResources.swapCancelStarted;
-            const startMessage = this._translateService.instant(startMessageResourceString, { operation: operation });
+            //const startMessageResourceString = operationType === 'swap' ? PortalResources.swapStarted : PortalResources.swapCancelStarted;
+            //const startMessage = this._translateService.instant(startMessageResourceString, { operation: operation });
 
             this.setBusy();
             this.swapping = true;
-            let notificationId = null;
 
-            this._portalService.startNotification(
-                startMessage,
-                startMessage)
-                .first()
-                .switchMap(s => {
-                    notificationId = s.id;
-
-                    return this._cacheService.postArm(path, null, null, content)
-                        .mergeMap(r => {
-                            if (operationType === 'swap' && (!this.phase || this.phase === 'phaseTwo')) {
-                                const location = r.headers.get('Location');
-                                if (!location) {
-                                    return Observable.of({ success: false, error: 'no location header' });
-                                } else {
-                                    return Observable.interval(1000)
-                                        .concatMap(_ => this._cacheService.get(location))
-                                        .map((r: Response) => r.status)
-                                        .take(30 * 60 * 1000)
-                                        .filter(s => s !== 202)
-                                        .map(r => { return { success: true, error: null } })
-                                        .catch(e => Observable.of({ success: false, error: e }))
-                                        .take(1);
-                                }
-                            } else {
-                                return Observable.of({ success: true, error: null });
-                            }
-                        })
-                        .catch(e => {
-                            return Observable.of({ success: false, error: e })
-                        })
+            this._cacheService.postArm(path, null, null, content)
+                .mergeMap(r => {
+                    if (operationType === 'swap' && (!this.phase || this.phase === 'phaseTwo')) {
+                        const location = r.headers.get('Location');
+                        if (!location) {
+                            return Observable.of({ success: false, error: 'no location header' });
+                        } else {
+                            return Observable.interval(1000)
+                                .concatMap(_ => this._cacheService.get(location))
+                                .map((r: Response) => r.status)
+                                .take(30 * 60 * 1000)
+                                .filter(s => s !== 202)
+                                .map(r => { return { success: true, error: null } })
+                                .catch(e => Observable.of({ success: false, error: e }))
+                                .take(1);
+                        }
+                    } else {
+                        return Observable.of({ success: true, error: null });
+                    }
+                })
+                .catch(e => {
+                    return Observable.of({ success: false, error: e })
                 })
                 .subscribe(r => {
                     this.dirtyMessage = null;
@@ -463,11 +833,6 @@ export class SwapSlotsComponent extends FeatureComponent<ResourceId> implements 
 
                         // TODO [andimarc]: refresh the _slotsMap entries for the slot(s) involved in the swap
                     }
-
-                    this._portalService.stopNotification(
-                        notificationId,
-                        r.success,
-                        resultMessage);
                 });
         }
     }

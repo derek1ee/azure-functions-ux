@@ -4,7 +4,15 @@ export interface ConnectionStrings {
 
 export interface ConnectionString {
     value: string;
-    type: ConnectionStringType
+    type: ConnectionStringType;
+}
+
+export type ConnectionStringProperyBag = ConnectionStringInfo[];
+
+export interface ConnectionStringInfo {
+    name: string;
+    connectionString: string;
+    type: ConnectionStringType;
 }
 
 export enum ConnectionStringType {

@@ -1,4 +1,5 @@
 import { Component, Injector, Input, OnDestroy } from '@angular/core';
+import { Response } from '@angular/http';
 import { Observable } from 'rxjs/Observable';
 import { FormBuilder, FormControl, FormGroup } from '@angular/forms';
 import { TranslateService } from '@ngx-translate/core';
@@ -20,6 +21,11 @@ import { PortalService } from 'app/shared/services/portal.service';
 import { RoutingSumValidator } from 'app/shared/validators/routingSumValidator';
 import { DecimalRangeValidator } from 'app/shared/validators/decimalRangeValidator';
 import { ScenarioService } from 'app/shared/services/scenario/scenario.service';
+import { SlotsService } from 'app/shared/services/slots.service';
+import { AddSlotParameters } from "app/site/deployment-slots/add-slot/add-slot.component";
+import { errorIds } from 'app/shared/models/error-ids';
+import { AiService } from "app/shared/services/ai.service";
+import { SwapSlotParameters } from "app/site/deployment-slots/swap-slots/swap-slots.component";
 
 // TODO [andimarc]: disable all controls when the sidepanel is open
 
@@ -51,7 +57,12 @@ export class DeploymentSlotsComponent extends FeatureComponent<TreeViewInfo<Site
     public slotsQuotaScaleUp: () => void;
 
     public swapControlsOpen: boolean;
+    public swapStatusMessage: string;
+    public swapStatusClass: 'info' | 'warning' | 'error';
+
     public addControlsOpen: boolean;
+    public addStatusMessage: string;
+    public addStatusClass: 'info' | 'warning' | 'error';
 
     public dirtyMessage: string;
 
@@ -83,7 +94,9 @@ export class DeploymentSlotsComponent extends FeatureComponent<TreeViewInfo<Site
         private _portalService: PortalService,
         private _siteService: SiteService,
         private _translateService: TranslateService,
+        private _aiService: AiService,
         private _scenarioService: ScenarioService,
+        private _slotsService: SlotsService,
         injector: Injector) {
 
         super('SlotsComponent', injector, SiteTabIds.deploymentSlotsConfig);
@@ -146,7 +159,12 @@ export class DeploymentSlotsComponent extends FeatureComponent<TreeViewInfo<Site
                 this.slotsQuotaMessage = null;
 
                 this.swapControlsOpen = false;
+                this.swapStatusMessage = null;
+                this.swapStatusClass = 'info';
+
                 this.addControlsOpen = false;
+                this.addStatusMessage = null;
+                this.addStatusClass = 'info';
 
                 this.siteArm = null;
                 this.relativeSlotsArm = null;
@@ -219,7 +237,7 @@ export class DeploymentSlotsComponent extends FeatureComponent<TreeViewInfo<Site
                         this._authZService.hasPermission(this.resourceId, [AuthzService.writeScope]),
                         this._authZService.hasPermission(this.resourceId, [AuthzService.actionScope]),
                         this._authZService.hasReadOnlyLock(this.resourceId),
-                        this._scenarioService.checkScenarioAsync(ScenarioIds.getSiteSlotLimits, {site: siteResult.result}));
+                        this._scenarioService.checkScenarioAsync(ScenarioIds.getSiteSlotLimits, { site: siteResult.result }));
                 } else {
                     return Observable.zip(
                         Observable.of(false),
@@ -234,7 +252,7 @@ export class DeploymentSlotsComponent extends FeatureComponent<TreeViewInfo<Site
                 const hasSwapPermission = r[1];
                 const hasReadOnlyLock = r[2];
                 const slotsQuota = r[3] ? r[3].data : 0;
-                this.canScaleUp = this.siteArm && this._scenarioService.checkScenario(ScenarioIds.addScaleUp, {site: this.siteArm}).status != 'disabled';
+                this.canScaleUp = this.siteArm && this._scenarioService.checkScenario(ScenarioIds.addScaleUp, { site: this.siteArm }).status != 'disabled';
 
                 this.hasWriteAccess = hasWritePermission && !hasReadOnlyLock;
 
@@ -420,18 +438,186 @@ export class DeploymentSlotsComponent extends FeatureComponent<TreeViewInfo<Site
         }
     }
 
+    receiveSwapParams(params: SwapSlotParameters) {
+        this.swapControlsOpen = false;
+
+        if (params) {
+            this.dirtyMessage = this._translateService.instant(PortalResources.swapOperationInProgressWarning);
+
+            if (params.operationType === 'slotsswap') {
+                this._slotsSwap(params);
+            } else if (params.operationType === 'resetSlotConfig') {
+                this._resetSlotConfig(params);
+            }
+        }
+    }
+
+    private _slotsSwap(params: SwapSlotParameters) {
+        this.setBusy();
+        const operation = this._translateService.instant(PortalResources.swapOperation, { swapType: params.swapType, srcSlot: params.srcName, destSlot: params.destName });
+        this.swapStatusMessage = this._translateService.instant(PortalResources.swapStarted, { operation: operation });
+        this.swapStatusClass = 'info';
+
+        this._cacheService.postArm(params.uri, null, null, params.content)
+            .mergeMap(r => {
+                const location = r.headers.get('Location');
+                if (!location) {
+                    return Observable.of({ success: false, error: 'no location header' }); // TODO [andimarc]: use Resource string?
+                } else {
+                    return Observable.interval(1000)
+                        .concatMap(_ => this._cacheService.get(location))
+                        .map((r: Response) => r.status)
+                        .take(30 * 60 * 1000)
+                        .filter(s => s !== 202)
+                        .map(r => { return { success: true, error: null } })
+                        .catch(e => Observable.of({ success: false, error: e }))
+                        .take(1);
+                }
+            })
+            .catch(e => {
+                return Observable.of({ success: false, error: e })
+            })
+            .subscribe(r => {
+                this.dirtyMessage = null;
+
+                if (r.success) {
+                    this.swapStatusMessage = this._translateService.instant(PortalResources.swapSuccess, { operation: operation });
+                    this.clearBusy();
+                    setTimeout(_ => {
+                        this.swapStatusMessage = null;
+                        this.refresh(); // TODO [andimarc]: prompt to confirm before refreshing?
+                    }, 1000);
+                } else {
+                    const resultMessage = this._translateService.instant(PortalResources.swapFailure, { operation: operation, error: JSON.stringify(r.error) });
+                    this.swapStatusMessage = resultMessage;
+                    this.swapStatusClass = 'error';
+                    this.clearBusy();
+                    this.showComponentError({
+                        message: resultMessage,
+                        details: resultMessage,
+                        errorId: errorIds.failedToSwapSlots,
+                        resourceId: ''//params.siteId
+                    });
+                    //this._aiService.trackEvent(errorIds.failedToSwapSlots, { error: r.error, id: params.siteId });
+                    this._aiService.trackEvent(errorIds.failedToSwapSlots, { error: r.error, id: '' });
+                    this._logService.error(LogCategories.deploymentSlots, '/deployment-slots', r.error);
+                }
+            });
+    }
+
+    private _resetSlotConfig(params: SwapSlotParameters) {
+        this.setBusy();
+        const operation = this._translateService.instant(PortalResources.swapOperation, { swapType: params.swapType, srcSlot: params.srcName, destSlot: params.destName });
+        this.swapStatusMessage = this._translateService.instant(PortalResources.swapCancelStarted, { operation: operation });
+        this.swapStatusClass = 'info';
+
+        this._cacheService.postArm(params.uri, null, null, params.content)
+            .mergeMap(r => {
+                return Observable.of({ success: true, error: null })
+            })
+            .catch(e => {
+                return Observable.of({ success: false, error: e })
+            })
+            .subscribe(r => {
+                this.dirtyMessage = null;
+
+                if (r.success) {
+                    this.swapStatusMessage = this._translateService.instant(PortalResources.swapCancelSuccess, { operation: operation });
+                    this.clearBusy();
+                    setTimeout(_ => {
+                        this.swapStatusMessage = null;
+                        this.refresh(); // TODO [andimarc]: prompt to confirm before refreshing?
+                    }, 1000);
+                } else {
+                    const resultMessage = this._translateService.instant(PortalResources.swapCancelFailure, { operation: operation, error: JSON.stringify(r.error) });
+                    this.swapStatusMessage = resultMessage;
+                    this.swapStatusClass = 'error';
+                    this.clearBusy();
+                    this.showComponentError({
+                        message: resultMessage,
+                        details: resultMessage,
+                        errorId: errorIds.failedToSwapSlots,
+                        resourceId: ''//params.siteId
+                    });
+                    //this._aiService.trackEvent(errorIds.failedToSwapSlots, { error: r.error, id: params.siteId });
+                    this._aiService.trackEvent(errorIds.failedToSwapSlots, { error: r.error, id: '' });
+                    this._logService.error(LogCategories.deploymentSlots, '/deployment-slots', r.error);
+                }
+            });
+    }
+
+    /*
+        private _resetSlotConfig2(params: SwapSlotParameters) {
+            this.setBusy();
+            const operation = this._translateService.instant(PortalResources.swapOperation, { swapType: params.swapType, srcSlot: params.srcName, destSlot: params.destName });
+            this.swapStatusMessage = this._translateService.instant(PortalResources.swapCancelStarted, { operation: operation });
+            this.swapStatusClass = 'info';
+    
+            this._cacheService.postArm(params.uri, null, null, params.content)
+                .subscribe(r => {
+                    this.dirtyMessage = null;
+                    this.swapStatusMessage = this._translateService.instant(PortalResources.swapCancelSuccess, { operation: operation });
+                    this.clearBusy();
+                    setTimeout(_ => {
+                        this.swapStatusMessage = null;
+                        this.refresh(); // TODO [andimarc]: prompt to confirm before refreshing?
+                    }, 1000);
+                }, err => {
+                    const resultMessage = this._translateService.instant(PortalResources.swapCancelFailure, { operation: operation, error: JSON.stringify(err) });
+                    this.dirtyMessage = null;
+                    this.swapStatusMessage = resultMessage;
+                    this.swapStatusClass = 'error';
+                    this.clearBusy();
+                    this.showComponentError({
+                        message: resultMessage,
+                        details: resultMessage,
+                        errorId: errorIds.failedToSwapSlots,
+                        resourceId: ''//params.siteId
+                    });
+                    //this._aiService.trackEvent(errorIds.failedToSwapSlots, { error: err, id: params.siteId });
+                    this._aiService.trackEvent(errorIds.failedToSwapSlots, { error: err, id: '' });
+                    this._logService.error(LogCategories.deploymentSlots, '/deployment-slots', err);
+                });
+        }
+    */
+
     showAddControls() {
         if (this._confirmIfDirty()) {
             this.addControlsOpen = true;
         }
     }
 
-    hideControls(refresh: boolean) {
-        this.swapControlsOpen = false;
+    receiveAddParams(params: AddSlotParameters) {
         this.addControlsOpen = false;
-        if (refresh) {
-            // TODO [andimarc]: prompt to confirm refresh?
-            this.refresh(true);
+
+        if (params) {
+            this.dirtyMessage = this._translateService.instant(PortalResources.slotCreateOperationInProgressWarning);
+
+            this.addStatusMessage = this._translateService.instant(PortalResources.slotNew_startCreateNotifyTitle).format(params.newSlotName);
+            this.addStatusClass = 'info';
+            this.setBusy();
+            this._slotsService.createNewSlot(params.siteId, params.newSlotName, params.location, params.serverFarmId, params.cloneConfig)
+                .subscribe(r => {
+                    this.dirtyMessage = null;
+                    this.addStatusMessage = this._translateService.instant(PortalResources.slotNew_startCreateSuccessNotifyTitle).format(params.newSlotName);
+                    this.clearBusy();
+                    setTimeout(_ => {
+                        this.addStatusMessage = null;
+                        this.refresh(); // TODO [andimarc]: prompt to confirm before refreshing?
+                    }, 1000);
+                }, err => {
+                    this.dirtyMessage = null;
+                    this.addStatusMessage = this._translateService.instant(PortalResources.slotNew_startCreateFailureNotifyTitle).format(params.newSlotName);
+                    this.addStatusClass = 'error';
+                    this.clearBusy();
+                    this.showComponentError({
+                        message: this._translateService.instant(PortalResources.slotNew_startCreateFailureNotifyTitle).format(params.newSlotName),
+                        details: this._translateService.instant(PortalResources.slotNew_startCreateFailureNotifyTitle).format(params.newSlotName),
+                        errorId: errorIds.failedToCreateSlot,
+                        resourceId: params.siteId
+                    });
+                    this._aiService.trackEvent(errorIds.failedToCreateSlot, { error: err, id: params.siteId });
+                });
         }
     }
 

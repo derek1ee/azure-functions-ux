@@ -17,11 +17,11 @@
                     <div class="drop-down-label">
                         <div class="bullet src"></div>
                         {{ Resources.source | translate }}
-                        <div *ngIf="swapForm?.controls['src']?.value === siteResourceId" class="pill">{{ Resources.production | translate }}</div>
+                        <div *ngIf="swapForm?.controls['srcId']?.value === siteResourceId" class="pill">{{ Resources.production | translate }}</div>
                         <div *ngIf="checkingSrc" class="spinner"></div>
                     </div>
                     <drop-down
-                        [control]="swapForm ? swapForm.controls['src'] : null"
+                        [control]="swapForm ? swapForm.controls['srcId'] : null"
                         [options]="srcDropDownOptions || []"
                         [setDefault]="false">
                     </drop-down>
@@ -36,11 +36,11 @@
                     <div class="drop-down-label">
                         <div class="bullet dest"></div>
                         {{ Resources.target | translate }}
-                        <div *ngIf="swapForm?.controls['dest']?.value === siteResourceId" class="pill">{{ Resources.production | translate }}</div>
+                        <div *ngIf="swapForm?.controls['destId']?.value === siteResourceId" class="pill">{{ Resources.production | translate }}</div>
                         <div *ngIf="checkingDest" class="spinner"></div>
                     </div>
                     <drop-down
-                        [control]="swapForm ? swapForm.controls['dest'] : null"
+                        [control]="swapForm ? swapForm.controls['destId'] : null"
                         [options]="destDropDownOptions || []"
                         [setDefault]="false">
                     </drop-down>

@@ -5,26 +5,29 @@ import { Observable } from 'rxjs/Observable';
 import { Subject } from 'rxjs/Subject';
 import { FormBuilder, FormGroup } from '@angular/forms';
 import { TranslateService } from '@ngx-translate/core';
-import { SlotsService } from 'app/shared/services/slots.service';
-import { AiService } from 'app/shared/services/ai.service';
 import { ArmObj, ResourceId } from 'app/shared/models/arm/arm-obj';
 import { Site } from 'app/shared/models/arm/site';
-import { PortalService } from 'app/shared/services/portal.service';
 import { RequiredValidator } from 'app/shared/validators/requiredValidator';
 import { PortalResources } from 'app/shared/models/portal-resources';
 import { SlotNameValidator } from 'app/shared/validators/slotNameValidator';
-import { errorIds } from 'app/shared/models/error-ids';
 import { AuthzService } from 'app/shared/services/authz.service';
 import { FeatureComponent } from 'app/shared/components/feature-component';
 import { ArmSiteDescriptor } from 'app/shared/resourceDescriptors';
 import { SiteService } from 'app/shared/services/site.service';
 import { SiteConfig } from 'app/shared/models/arm/site-config';
 import { DropDownElement } from 'app/shared/models/drop-down-element';
-import { CustomFormControl } from 'app/controls/click-to-edit/click-to-edit.component';
-import { SlotsInfoCache } from "app/site/deployment-slots/helpers/slotsInfoCache";
 import { ScenarioService } from 'app/shared/services/scenario/scenario.service';
+import { CloneSrcValidator } from "app/site/deployment-slots/add-slot/cloneSrcValidator";
 
 // TODO [andimarc]: disable all controls when an add operation is in progress
+
+export interface AddSlotParameters {
+    siteId: ResourceId,
+    newSlotName: string,
+    location: string,
+    serverFarmId: string,
+    cloneConfig?: SiteConfig
+}
 
 @Component({
     selector: 'add-slot',
@@ -36,7 +39,7 @@ export class AddSlotComponent extends FeatureComponent<ResourceId> implements On
         this.setInput(resourceId);
     }
 
-    @Output() close: Subject<boolean>;
+    @Output() parameters: Subject<AddSlotParameters>;
 
 
     public dirtyMessage: string;
@@ -46,26 +49,17 @@ export class AddSlotComponent extends FeatureComponent<ResourceId> implements On
     public hasCreateAcess: boolean;
     public slotsQuotaMessage: string;
     public isLoading = true;
-    public creating: boolean;
-    public created: boolean;
-    public checkingConfigSrc: boolean;
-    public configSrcReadFailure: string;
-    public configSrcDropDownOptions: DropDownElement<string>[];
+    public loadingFailed = false;
+    public cloneSrcIdDropDownOptions: DropDownElement<string>[];
 
     private _slotConfig: SiteConfig;
     private _siteId: string;
     private _slotsArm: ArmObj<Site>[];
 
-    private _slotsInfoCache: SlotsInfoCache;
-    private _configSrcSubject: Subject<string>;
-
     constructor(
         private _fb: FormBuilder,
         private _siteService: SiteService,
         private _translateService: TranslateService,
-        private _portalService: PortalService,
-        private _aiService: AiService,
-        private _slotService: SlotsService,
         private _logService: LogService,
         private _authZService: AuthzService,
         private _scenarioService: ScenarioService,
@@ -78,76 +72,17 @@ export class AddSlotComponent extends FeatureComponent<ResourceId> implements On
         this.featureName = 'deploymentslots';
         this.isParentComponent = true;
 
-        this.close = new Subject<boolean>();
-
-        this._slotsInfoCache = new SlotsInfoCache(this._authZService, this._siteService);
-        this._configSrcSubject = new Subject<string>();
-
-        this._configSrcSubject
-            .takeUntil(this.ngUnsubscribe)
+        this.parameters = new Subject<AddSlotParameters>();
 
         const nameCtrl = this._fb.control({ value: null, disabled: true });
-        const configSrcCtrl = this._fb.control({ value: null, disabled: true });
+        const cloneSrcIdCtrl = this._fb.control({ value: null, disabled: true });
+        const cloneSrcConfigCtrl = this._fb.control({ value: null, disabled: true });
 
         this.addForm = this._fb.group({
             name: nameCtrl,
-            configSrc: configSrcCtrl
+            cloneSrcId: cloneSrcIdCtrl,
+            cloneSrcConfig: cloneSrcConfigCtrl
         });
-
-        configSrcCtrl.valueChanges
-            .takeUntil(this.ngUnsubscribe)
-            .distinctUntilChanged()
-            .do(_ => {
-                (nameCtrl as CustomFormControl)._msRunValidation = true;
-                nameCtrl.updateValueAndValidity();
-            })
-            .filter(v => v && v !== '-')
-            .switchMap(srcId => {
-                this.checkingConfigSrc = true;
-                this.configSrcReadFailure = null;
-                this._slotConfig = null;
-                return Observable.zip(
-                    this._siteService.getSiteConfig(srcId),
-                    this._siteService.getAppSettings(srcId),
-                    this._siteService.getConnectionStrings(srcId));
-            })
-            .subscribe(r => {
-                const siteConfigResult = r[0];
-                const appSettingsResult = r[1];
-                const connectionStringsResult = r[2];
-
-                if (siteConfigResult.isSuccessful && appSettingsResult.isSuccessful && connectionStringsResult.isSuccessful) {
-                    this._slotConfig = siteConfigResult.result.properties;
-                    this._slotConfig.appSettings = appSettingsResult.result.properties;
-                    this._slotConfig.connectionStrings = connectionStringsResult.result.properties;
-                } else {
-                    this.configSrcReadFailure = "failure";
-                }
-
-                this.checkingConfigSrc = false;
-            });
-    }
-
-    public handleCloneCtrlChange(value: boolean) {
-        if (this.addForm) {
-            const nameCtrl = this.addForm.controls['name'] as CustomFormControl;
-            if (nameCtrl) {
-                nameCtrl._msRunValidation = true;
-                nameCtrl.updateValueAndValidity();
-            }
-
-            const configSrcCtrl = this.addForm.controls['configSrc'] as CustomFormControl;
-            if (configSrcCtrl) {
-                if (value) {
-                    configSrcCtrl.clearValidators();
-                    configSrcCtrl.clearAsyncValidators();
-                    configSrcCtrl.setValue(null);
-                    configSrcCtrl.disable();
-                } else {
-                    configSrcCtrl.enable();
-                }
-            }
-        }
     }
 
     protected setup(inputEvents: Observable<ResourceId>) {
@@ -156,13 +91,10 @@ export class AddSlotComponent extends FeatureComponent<ResourceId> implements On
             .switchMap(resourceId => {
                 this.hasCreateAcess = false;
                 this.slotsQuotaMessage = null;
-                this.creating = false;
                 this.isLoading = true;
+                this.loadingFailed = false;
 
-                this.checkingConfigSrc = false;
-                this.configSrcReadFailure = null;
-
-                this.configSrcDropDownOptions = null;
+                this.cloneSrcIdDropDownOptions = null;
 
                 this._slotConfig = null;
                 this._slotsArm = null;
@@ -184,21 +116,19 @@ export class AddSlotComponent extends FeatureComponent<ResourceId> implements On
 
                 this.hasCreateAcess = hasWritePermission && !hasReadOnlyLock;
 
-                let success = true;
-
                 if (!siteResult.isSuccessful) {
                     this._logService.error(LogCategories.addSlot, '/add-slot', siteResult.error.result);
-                    success = false;
+                    this.loadingFailed = true;
                 }
                 if (!slotsResult.isSuccessful) {
                     this._logService.error(LogCategories.addSlot, '/add-slot', slotsResult.error.result);
-                    success = false;
+                    this.loadingFailed = true;
                 }
 
-                if (success) {
+                if (!this.loadingFailed) {
                     this._slotsArm = slotsResult.result.value;
                     this._slotsArm.unshift(siteResult.result);
-                    return this._scenarioService.checkScenarioAsync(ScenarioIds.getSiteSlotLimits, {site: siteResult.result});
+                    return this._scenarioService.checkScenarioAsync(ScenarioIds.getSiteSlotLimits, { site: siteResult.result });
                 } else {
                     return Observable.of(null);
                 }
@@ -219,103 +149,78 @@ export class AddSlotComponent extends FeatureComponent<ResourceId> implements On
 
     private _setupForm() {
         const nameCtrl = this.addForm.get('name');
-        const configSrcCtrl = this.addForm.get('configSrc')
+        const cloneSrcIdCtrl = this.addForm.get('cloneSrcId')
+        const cloneSrcConfigCtrl = this.addForm.get('cloneSrcConfig')
 
-        if (!this.hasCreateAcess || !this._slotsArm) {
+        if (!this.hasCreateAcess || !!this.slotsQuotaMessage || this.loadingFailed) {
 
             nameCtrl.clearValidators();
             nameCtrl.clearAsyncValidators();
+            nameCtrl.setValue(null);
             nameCtrl.disable();
 
-            configSrcCtrl.clearValidators();
-            configSrcCtrl.clearAsyncValidators();
-            configSrcCtrl.setValue(null);
-            configSrcCtrl.disable();
+            cloneSrcIdCtrl.clearValidators();
+            cloneSrcIdCtrl.clearAsyncValidators();
+            cloneSrcIdCtrl.setValue(null);
+            cloneSrcIdCtrl.disable();
 
-        } else if (this.hasCreateAcess) {
+            cloneSrcConfigCtrl.clearValidators();
+            cloneSrcConfigCtrl.clearAsyncValidators();
+            cloneSrcConfigCtrl.setValue(null);
+            cloneSrcConfigCtrl.disable();
+
+        } else {
 
             const requiredValidator = new RequiredValidator(this._translateService);
             const slotNameValidator = new SlotNameValidator(this._injector, this._siteId);
+            nameCtrl.enable();
+            nameCtrl.setValue(null);
             nameCtrl.setValidators(requiredValidator.validate.bind(requiredValidator));
             nameCtrl.setAsyncValidators(slotNameValidator.validate.bind(slotNameValidator));
-            nameCtrl.enable();
 
-            if (this._slotsArm && this._slotsArm.length > 0) {
-                const options: DropDownElement<string>[] = [
-                    {
-                        displayLabel: this._translateService.instant(`Don't clone settings`),
-                        value: '-'
-                    }
-                ];
-
-                this._slotsArm.forEach(s => {
-                    options.push({
-                        displayLabel: s.properties.name,
-                        value: s.id
-                    });
-                })
-                this.configSrcDropDownOptions = options;
-                configSrcCtrl.enable();
-                configSrcCtrl.setValue('-');
-            } else {
-                configSrcCtrl.clearValidators();
-                configSrcCtrl.clearAsyncValidators();
-                configSrcCtrl.setValue(null);
-                configSrcCtrl.disable();
-            }
-        }
-
-    }
-
-    // TODO [andimarc]: use configSrc control
-    createSlot() {
-        this.dirtyMessage = this._translateService.instant(PortalResources.slotCreateOperationInProgressWarning);
-
-        const newSlotName = this.addForm.controls['name'].value;
-        let notificationId = null;
-        this.creating = true;
-        this.setBusy();
-        // show create slot start notification
-        this._portalService.startNotification(
-            this._translateService.instant(PortalResources.slotNew_startCreateNotifyTitle).format(newSlotName),
-            this._translateService.instant(PortalResources.slotNew_startCreateNotifyTitle).format(newSlotName))
-            .first()
-            .switchMap(s => {
-                notificationId = s.id;
-                return this._slotService.createNewSlot(this._slotsArm[0].id, newSlotName, this._slotsArm[0].location, this._slotsArm[0].properties.serverFarmId);
-            })
-            .subscribe((r) => {
-                this.creating = false;
-                this.created = true;
-                this.clearBusy();
-                // TODO [andimarc]: refresh slots list
-                // update notification
-                this._portalService.stopNotification(
-                    notificationId,
-                    true,
-                    this._translateService.instant(PortalResources.slotNew_startCreateSuccessNotifyTitle).format(newSlotName));
-            }, err => {
-                this.creating = false;
-                this.clearBusy();
-                this._portalService.stopNotification(
-                    notificationId,
-                    false,
-                    this._translateService.instant(PortalResources.slotNew_startCreateFailureNotifyTitle).format(newSlotName));
-                this.showComponentError({
-                    message: this._translateService.instant(PortalResources.slotNew_startCreateFailureNotifyTitle).format(newSlotName),
-                    details: this._translateService.instant(PortalResources.slotNew_startCreateFailureNotifyTitle).format(newSlotName),
-                    errorId: errorIds.failedToCreateSlot,
-                    resourceId: this._slotsArm[0].id
+            const options: DropDownElement<string>[] = [
+                {
+                    displayLabel: this._translateService.instant(PortalResources.slotNew_dontCloneConfig),
+                    value: '-'
+                }
+            ];
+            this._slotsArm.forEach(s => {
+                options.push({
+                    displayLabel: s.properties.name,
+                    value: s.id
                 });
-                this._aiService.trackEvent(errorIds.failedToCreateApp, { error: err, id: this._slotsArm[0].id });
-            });
+            })
+            this.cloneSrcIdDropDownOptions = options;
+
+            const cloneSrcValidator = new CloneSrcValidator(this._siteService, this._translateService, this.addForm);
+            cloneSrcIdCtrl.enable();
+            cloneSrcIdCtrl.setValue('-');
+            cloneSrcIdCtrl.setAsyncValidators(cloneSrcValidator.validate.bind(cloneSrcValidator));
+
+            cloneSrcConfigCtrl.enable();
+            cloneSrcConfigCtrl.setValue(null);
+        }
     }
 
-    closePanel() {
-        const close = (!this.addForm || !this.addForm.dirty || this.created) ? true : confirm('unsaved changes will be lost'); // TODO [andimarc]: add to resources
+    submit() {
+        const newSlotName = this.addForm.controls['name'].value;
+        const newSlotConfig = this.addForm.controls['cloneSrcConfig'].value;
+
+        this.parameters.next({
+            siteId: this._slotsArm[0].id,
+            newSlotName: newSlotName,
+            location: this._slotsArm[0].location,
+            serverFarmId: this._slotsArm[0].properties.serverFarmId,
+            cloneConfig: newSlotConfig
+        });
+    }
+
+    cancel() {
+        const confirmMsg = this._translateService.instant(PortalResources.unsavedChangesWarning);
+        const close = (!this.addForm || !this.addForm.dirty) ? true : confirm(confirmMsg);
 
         if (close) {
-            this.close.next(!!this.created);
+            this.parameters.next(null);
         }
     }
 }
