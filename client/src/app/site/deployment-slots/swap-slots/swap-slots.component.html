@@ -10,26 +10,57 @@
         {{ 'Swap slots' | translate }}
     </div>
 
-    <div class="body-container">
+    <div class="body-container" [formGroup]="swapForm" novalidate>
+
+        <info-box *ngIf="swapPermissionsMessage"
+            typeClass="warn"
+            [infoText]="swapPermissionsMessage">
+        </info-box>
+
+        <info-box *ngIf="writePermissionsMessage"
+            typeClass="warn"
+            [infoText]="writePermissionsMessage">
+        </info-box>
+
+        <info-box *ngIf="readOnlyLockMessage"
+            typeClass="warn"
+            [infoText]="readOnlyLockMessage">
+        </info-box>
+
+        <info-box *ngIf="generalFailureMessage"
+            typeClass="error"
+            [infoText]="generalFailureMessage">
+        </info-box>
+
         <div class="slot-drop-downs-container">
+
             <div class="slot-drop-down-container">
                 <div class="slot-drop-down">
                     <div class="drop-down-label">
                         <div class="bullet src"></div>
                         {{ Resources.source | translate }}
                         <div *ngIf="swapForm?.controls['srcId']?.value === siteResourceId" class="pill">{{ Resources.production | translate }}</div>
-                        <div *ngIf="checkingSrc" class="spinner"></div>
                     </div>
-                    <drop-down
-                        [control]="swapForm ? swapForm.controls['srcId'] : null"
-                        [options]="srcDropDownOptions || []"
-                        [setDefault]="false">
-                    </drop-down>
-                    <div *ngIf="srcNoSwapAccess">
-                        No swap access on the selected slot.
+                    <div>
+                        <drop-down
+                            [control]="swapForm ? swapForm.controls['srcId'] : null"
+                            [options]="srcDropDownOptions || []"
+                            [setDefault]="false">
+                        </drop-down>
+                        <div invalidmessage="srcId" errorkey="insufficientPermissions"></div>
+                        <div invalidmessage="srcId" errorkey="readOnlyLock"></div>
+                        <div invalidmessage="srcId" errorkey="fetchError"></div>
+                    </div>
+                    <div>
+                        {{ swapForm ? swapForm.controls['srcId'] : '-'' }}
                     </div>
                 </div>
             </div>
+
+            <span
+                class="header-icon-container"
+                load-image="image/swap.svg">
+            </span>
 
             <div class="slot-drop-down-container dest">
                 <div class="slot-drop-down">
@@ -37,35 +68,41 @@
                         <div class="bullet dest"></div>
                         {{ Resources.target | translate }}
                         <div *ngIf="swapForm?.controls['destId']?.value === siteResourceId" class="pill">{{ Resources.production | translate }}</div>
-                        <div *ngIf="checkingDest" class="spinner"></div>
                     </div>
-                    <drop-down
-                        [control]="swapForm ? swapForm.controls['destId'] : null"
-                        [options]="destDropDownOptions || []"
-                        [setDefault]="false">
-                    </drop-down>
-                    <div *ngIf="destNoSwapAccess">
-                        No swap access on the selected slot.
+                    <div>
+                        <drop-down
+                            [control]="swapForm ? swapForm.controls['destId'] : null"
+                            [options]="destDropDownOptions || []"
+                            [setDefault]="false">
+                        </drop-down>
+                        <div invalidmessage="destId" errorkey="insufficientPermissions"></div>
+                        <div invalidmessage="destId" errorkey="readOnlyLock"></div>
+                        <div invalidmessage="destId" errorkey="fetchError"></div>
+                    </div>
+                    <div>
+                        {{ swapForm ? swapForm.controls['destId'] : '-' }}
                     </div>
                 </div>
             </div>
         </div>
 
-        <div *ngIf="slotsNotUnique">
+        <div invalidmessage="form-group" errorkey="slotsNotUnique"></div>
+        <!--<div *ngIf="slotsNotUnique">
             Slots must be different
-        </div>
+        </div>-->
 
         <div>
             <label>
                 <input [formControl]="swapForm ? swapForm.controls['multiPhase'] : null" type="checkbox">
                 {{ Resources.swapWithPreviewLabel | translate }}
             </label>
-            <div *ngIf="siteAuthConflicts">
+            <div invalidmessage="form-group" errorkey="siteAuthConflicts"></div>
+            <!--<div *ngIf="siteAuthConflicts">
                 Cannnot perform multiphase swap because the following slots have authentication enabled:
                 <div *ngFor="let slot of siteAuthConflicts">
                     {{ slot }}
                 </div>
-            </div>
+            </div>-->
         </div>
 
         <div

@@ -1,24 +1,5 @@
-<div *ngIf="!fetchingContent && !featureSupported && canScaleUp" class="scale-up-container">
-
-    <div load-image="image/scale-up.svg" class="icon-large"></div>
-    <div class="scale-up-message">
-        {{ Resources.slots_upgrade | translate}}
-    </div>
-    <div class="slots-description">
-        {{ Resources.slots_description | translate }}
-        <a class="link" target="_blank" [href]="FwdLinks.standaloneCreateLearnMore"> <!-- TODO [andimrc]: use correct fwdlink -->
-            {{ Resources.topBar_learnMore | translate }}
-        </a>
-    </div>
-    <button (click)="scaleUp()" class="custom-button">
-        {{ Resources.upgrade | translate }}
-    </button>
-
-</div>
-
 <!--backdropClass="sidebar-backdrop-deployment-slots"-->
 <ng-sidebar-container
-    *ngIf="keepVisible || featureSupported || loadingFailed"
     class="sidebar-container"
     backdropClass="ng-sidebar__backdrop"
     [animate]="true">
@@ -29,39 +10,58 @@
                 displayText="{{ Resources.slotNew | translate }}"
                 iconUrl="image/add.svg"
                 (click)="showAddControls()"
-                [disabled]="!hasWriteAccess || !!slotsQuotaMessage">
+                [disabled]="fetchingContent || !featureSupported || !hasWriteAccess || !!slotsQuotaMessage">
             </command>
 
             <command
                 displayText="{{ (siteArm?.properties.targetSwapSlot ? Resources.completeSwap : Resources.swap) | translate }}"
                 iconUrl="image/swap.svg"
                 (click)="showSwapControls()"
-                [disabled]="!hasWriteAccess || !hasSwapAccess || !relativeSlotsArm || !relativeSlotsArm.length">
+                [disabled]="fetchingContent || !featureSupported || !hasWriteAccess || !hasSwapAccess || !relativeSlotsArm || !relativeSlotsArm.length">
             </command>
 
             <command
                 [displayText]="Resources.save | translate"
                 iconUrl="image/save.svg"
                 (click)="save()"
-                [disabled]="!mainForm || !mainForm.valid || mainForm.pristine || !hasWriteAccess">
+                [disabled]="fetchingContent || !featureSupported || !mainForm || !mainForm.valid || mainForm.pristine || !hasWriteAccess">
             </command>
 
             <command
                 [displayText]="Resources.discard | translate"
                 iconUrl="image/discard.svg"
                 (click)="discard()"
-                [disabled]="!mainForm || mainForm.pristine || !hasWriteAccess">
+                [disabled]="fetchingContent || !featureSupported || !mainForm || mainForm.pristine || !hasWriteAccess">
             </command>
 
             <command
                 [displayText]="Resources.refresh | translate"
                 iconUrl="image/reset.svg"
                 (click)="refresh(true)"
-                [disabled]="!viewInfo">
+                [disabled]="fetchingContent || !viewInfo">
             </command>
         </command-bar>
 
-        <div class="config-wrapper">
+        <div *ngIf="!fetchingContent && !featureSupported && canScaleUp" class="scale-up-container">
+
+            <div load-image="image/scale-up.svg" class="icon-large"></div>
+            <div class="scale-up-message">
+                {{ Resources.slots_upgrade | translate}}
+            </div>
+            <div class="slots-description">
+                {{ Resources.slots_description | translate }}
+                <a class="link" target="_blank" [href]="FwdLinks.standaloneCreateLearnMore"> <!-- TODO [andimrc]: use correct fwdlink -->
+                    {{ Resources.topBar_learnMore | translate }}
+                </a>
+            </div>
+            <button (click)="scaleUp()" class="custom-button">
+                {{ Resources.upgrade | translate }}
+            </button>
+
+        </div>
+
+        <div *ngIf="keepVisible || featureSupported || loadingFailed" class="config-wrapper">
+
             <div class="config-container"
                 [is-dirty]="mainForm?.dirty"
                 [is-dirty-message]="dirtyMessage">

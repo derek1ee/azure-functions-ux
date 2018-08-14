@@ -128,12 +128,15 @@ export class SwapSlotsComponent extends FeatureComponent<ResourceId> implements 
 
         const multiPhaseCtrl = this._fb.control({ value: false, disabled: true });
 
+        const revertSwapCtrl = this._fb.control({ value: false, disabled: true });
+
         this.swapForm = this._fb.group({
             srcId: srcIdCtrl,
             srcConfig: srcConfigCtrl,
             destId: destIdCtrl,
             desConfig: desConfigCtrl,
             multiPhase: multiPhaseCtrl,
+            revertSwap: revertSwapCtrl,
         });
     }
 
@@ -307,8 +310,9 @@ export class SwapSlotsComponent extends FeatureComponent<ResourceId> implements 
         const destIdCtrl = this.swapForm.get('destId');
         const destConfigCtrl = this.swapForm.get('destConfig');
         const multiPhaseCtrl = this.swapForm.get('multiPhase');
+        const revertSwapCtrl = this.swapForm.get('revertSwap');
 
-        [srcIdCtrl, srcConfigCtrl, destIdCtrl, destConfigCtrl, multiPhaseCtrl].forEach(ctrl => {
+        [srcIdCtrl, srcConfigCtrl, destIdCtrl, destConfigCtrl, multiPhaseCtrl, revertSwapCtrl].forEach(ctrl => {
             ctrl.clearValidators();
             ctrl.clearAsyncValidators();
             ctrl.setValue(null);
@@ -322,6 +326,7 @@ export class SwapSlotsComponent extends FeatureComponent<ResourceId> implements 
         const destIdCtrl = this.swapForm.get('destId');
         const destConfigCtrl = this.swapForm.get('destConfig');
         const multiPhaseCtrl = this.swapForm.get('multiPhase');
+        const revertSwapCtrl = this.swapForm.get('revertSwap');
 
         srcIdCtrl.enable();
         //setup validators
@@ -337,6 +342,8 @@ export class SwapSlotsComponent extends FeatureComponent<ResourceId> implements 
             multiPhaseCtrl.enable();
             //setup validators
         }
+
+        revertSwapCtrl.enable();
     }
 
 
