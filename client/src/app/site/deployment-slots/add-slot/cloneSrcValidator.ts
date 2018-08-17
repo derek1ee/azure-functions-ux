@@ -16,16 +16,16 @@ export class CloneSrcValidator implements AsyncValidator {
         }
 
         const nameCtrl: FormControl = this._formGroup.get('name') as FormControl;
-        const cloneSrcIdCrtl: FormControl = this._formGroup.get('cloneSrcId') as FormControl;
+        const cloneSrcIdCtrl: FormControl = this._formGroup.get('cloneSrcId') as FormControl;
         const cloneSrcConfigCtrl: FormControl = this._formGroup.get('cloneSrcConfig') as FormControl;
 
-        if (!nameCtrl || !cloneSrcIdCrtl || !cloneSrcConfigCtrl) {
+        if (!nameCtrl || !cloneSrcIdCtrl || !cloneSrcConfigCtrl) {
             throw "Validator requires FormGroup with controls 'name' 'cloneSrcId' and 'cloneSrcConfig'";
         }
 
-        if (control !== cloneSrcIdCrtl) {
+        if (control !== cloneSrcIdCtrl) {
             throw "FormGroup for validator must be parent of FormControl being validated";
-        }  
+        }
 
         if (!(nameCtrl as CustomFormControl)._msRunValidation) {
             (nameCtrl as CustomFormControl)._msRunValidation = true;
@@ -37,7 +37,7 @@ export class CloneSrcValidator implements AsyncValidator {
 
         cloneSrcConfigCtrl.setValue(null);
 
-        const cloneSrcId = cloneSrcIdCrtl.value;
+        const cloneSrcId = cloneSrcIdCtrl.value;
 
         if (!cloneSrcId) {
             return Promise.resolve({
