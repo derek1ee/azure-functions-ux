@@ -146,7 +146,7 @@
             </info-box>
         </div>
 
-        <div *ngIf="phase!=='complete' && !swapping && (loadingDiffs || slotsDiffs)">
+        <div *ngIf="showPreviewChanges && !swapping && (loadingDiffs || slotsDiffs)">
             <h1>Preview changes</h1>
             <div class="preview-changes-container">
                 <div class="preview-toggle-container">
